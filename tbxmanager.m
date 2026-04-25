@@ -97,11 +97,44 @@ function tbx_setup()
             mkdir(dirs{i});
         end
     end
-    % Initialize sources.json if missing
+    % Initialize sources.json if missing, or migrate old URLs
     sourcesFile = fullfile(baseDir, "state", "sources.json");
     if ~isfile(sourcesFile)
         s.sources = {"https://marekwadinger.github.io/tbxmanager-registry/index.json"};
         tbx_writeJson(sourcesFile, s);
+    else
+        % Migrate kvasnica.github.io → marekwadinger.github.io
+        try
+            data = tbx_readJson(sourcesFile);
+            if isfield(data, "sources")
+                raw = data.sources;
+                changed = false;
+                if iscell(raw)
+                    for i = 1:numel(raw)
+                        if ischar(raw{i}) && contains(string(raw{i}), "kvasnica.github.io/tbxmanager-registry")
+                            raw{i} = strrep(raw{i}, "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                            changed = true;
+                        end
+                    end
+                elseif ischar(raw) && contains(string(raw), "kvasnica.github.io/tbxmanager-registry")
+                    raw = strrep(raw, "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                    changed = true;
+                elseif isstring(raw)
+                    for i = 1:numel(raw)
+                        if contains(raw(i), "kvasnica.github.io/tbxmanager-registry")
+                            raw(i) = strrep(raw(i), "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                            changed = true;
+                        end
+                    end
+                end
+                if changed
+                    data.sources = raw;
+                    tbx_writeJson(sourcesFile, data);
+                end
+            end
+        catch
+            % Ignore — corrupted sources.json is handled downstream
+        end
     end
     % Initialize enabled.json if missing
     enabledFile = fullfile(baseDir, "state", "enabled.json");

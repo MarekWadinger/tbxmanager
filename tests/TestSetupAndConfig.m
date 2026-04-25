@@ -65,5 +65,27 @@ classdef TestSetupAndConfig < matlab.unittest.TestCase
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "state")));
         end
 
+        function testSetupMigratesOldSourceUrl(testCase)
+            % Pre-create sources.json with old kvasnica URL
+            stateDir = fullfile(testCase.TempDir, "state");
+            mkdir(stateDir);
+            fid = fopen(fullfile(stateDir, "sources.json"), 'w');
+            fprintf(fid, '{"sources":["https://kvasnica.github.io/tbxmanager-registry/index.json"]}');
+            fclose(fid);
+
+            evalc('tbxmanager("help")');
+
+            data = jsondecode(fileread(fullfile(stateDir, "sources.json")));
+            if iscell(data.sources)
+                url = string(data.sources{1});
+            else
+                url = string(data.sources);
+            end
+            testCase.verifyTrue(contains(url, "marekwadinger.github.io"), ...
+                'Old kvasnica URL should be migrated to marekwadinger');
+            testCase.verifyFalse(contains(url, "kvasnica.github.io"), ...
+                'Old kvasnica URL should no longer be present');
+        end
+
     end
 end

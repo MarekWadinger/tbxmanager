@@ -60,6 +60,21 @@ If the source list is empty, add the default:
 tbxmanager source add https://marekwadinger.github.io/tbxmanager-registry/index.json
 ```
 
+### Index returns 404 (stale source URL)
+
+If you see an error like:
+
+```text
+Failed to fetch index from https://kvasnica.github.io/tbxmanager-registry/index.json: ... 404
+```
+
+Your `~/.tbxmanager/state/sources.json` contains an outdated registry URL. Update to v2.3.0+ (which auto-migrates) or fix manually:
+
+```matlab
+tbxmanager source remove https://kvasnica.github.io/tbxmanager-registry/index.json
+tbxmanager source add https://marekwadinger.github.io/tbxmanager-registry/index.json
+```
+
 ### "No version satisfies constraint for platform"
 
 The package does not have an archive for your platform (e.g., macOS Apple Silicon).
