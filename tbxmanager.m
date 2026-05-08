@@ -19,6 +19,9 @@ function varargout = tbxmanager(command, varargin)
 %   tbxmanager cache clean|list
 %   tbxmanager help [command]
 %
+%   Commands can be abbreviated to their unique prefix (e.g., 'inst' for 'install').
+%   Shorthand alias: tbx (e.g., tbx install mpt)
+%
 %   For more information: tbxmanager help
 
 % Copyright (c) 2012-2026 Michal Kvasnica
@@ -30,9 +33,18 @@ function varargout = tbxmanager(command, varargin)
     command = string(command);
     args = string(varargin);
 
+    % Extract global flags (--yes/-y, --quiet/-q) before command dispatch
+    yesMode  = any(args == "--yes"   | args == "-y");
+    quietMode = any(args == "--quiet" | args == "-q");
+    args = args(args ~= "--yes" & args ~= "-y" & args ~= "--quiet" & args ~= "-q");
+    tbx_yesMode(yesMode);
+    tbx_quietMode(quietMode);
+    cleanupFlags = onCleanup(@() tbx_resetFlags()); %#ok<NASGU>
+
     tbx_setup();
 
-    switch lower(command)
+    command = tbx_resolveCommand(command);
+    switch command
         case "install"
             main_install(args);
         case "uninstall"
@@ -65,6 +77,16 @@ function varargout = tbxmanager(command, varargin)
             main_require(args);
         case "cache"
             main_cache(args);
+        case "publish"
+            main_publish(args);
+        case "add"
+            main_add(args);
+        case "remove"
+            main_remove(args);
+        case "check"
+            main_check(args);
+        case "tree"
+            main_tree(args);
         case "help"
             main_help(args);
         case "internal__"
@@ -74,6 +96,8 @@ function varargout = tbxmanager(command, varargin)
                 main_internal(args);
             end
             return;
+        case ""
+            % Error already printed by tbx_resolveCommand
         otherwise
             tbx_printError("Unknown command '%s'. Type 'tbxmanager help' for usage.", command);
     end
@@ -85,7 +109,13 @@ end
 
 function tbx_setup()
 %TBX_SETUP  Create ~/.tbxmanager/ directory structure on first run.
+%   Uses a persistent guard so the expensive checks only run once per
+%   MATLAB session (or once per unique TBXMANAGER_HOME in tests).
+    persistent lastBaseDir tbxAliasChecked;
     baseDir = tbx_baseDir();
+    if isequal(lastBaseDir, char(baseDir))
+        return;
+    end
     dirs = {fullfile(baseDir, "packages"), ...
             fullfile(baseDir, "cache"), ...
             fullfile(baseDir, "state"), ...
@@ -95,11 +125,44 @@ function tbx_setup()
             mkdir(dirs{i});
         end
     end
-    % Initialize sources.json if missing
+    % Initialize sources.json if missing, or migrate old URLs
     sourcesFile = fullfile(baseDir, "state", "sources.json");
     if ~isfile(sourcesFile)
-        s.sources = {"https://kvasnica.github.io/tbxmanager-registry/index.json"};
+        s.sources = {"https://marekwadinger.github.io/tbxmanager-registry/index.json"};
         tbx_writeJson(sourcesFile, s);
+    else
+        % Migrate kvasnica.github.io → marekwadinger.github.io
+        try
+            data = tbx_readJson(sourcesFile);
+            if isfield(data, "sources")
+                raw = data.sources;
+                changed = false;
+                if iscell(raw)
+                    for i = 1:numel(raw)
+                        if ischar(raw{i}) && contains(string(raw{i}), "kvasnica.github.io/tbxmanager-registry")
+                            raw{i} = strrep(raw{i}, "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                            changed = true;
+                        end
+                    end
+                elseif ischar(raw) && contains(string(raw), "kvasnica.github.io/tbxmanager-registry")
+                    raw = strrep(raw, "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                    changed = true;
+                elseif isstring(raw)
+                    for i = 1:numel(raw)
+                        if contains(raw(i), "kvasnica.github.io/tbxmanager-registry")
+                            raw(i) = strrep(raw(i), "kvasnica.github.io/tbxmanager-registry", "marekwadinger.github.io/tbxmanager-registry");
+                            changed = true;
+                        end
+                    end
+                end
+                if changed
+                    data.sources = raw;
+                    tbx_writeJson(sourcesFile, data);
+                end
+            end
+        catch
+            % Ignore — corrupted sources.json is handled downstream
+        end
     end
     % Initialize enabled.json if missing
     enabledFile = fullfile(baseDir, "state", "enabled.json");
@@ -109,6 +172,154 @@ function tbx_setup()
     end
     % Detect old-style installation and offer migration
     tbx_migrateOld();
+
+    % Auto-create tbx.m alias next to tbxmanager.m (once per session)
+    if isempty(tbxAliasChecked)
+        try
+            selfDir = fileparts(mfilename('fullpath'));
+            if ~isempty(selfDir)
+                tbxAliasFile = fullfile(selfDir, "tbx.m");
+                if ~isfile(tbxAliasFile)
+                    tbxContent = sprintf('%s\n%s\n%s\n%s\n%s\n', ...
+                        'function varargout = tbx(varargin)', ...
+                        '%TBX  Shorthand alias for tbxmanager.', ...
+                        '%   tbx install pkg  is equivalent to  tbxmanager install pkg', ...
+                        '    [varargout{1:nargout}] = tbxmanager(varargin{:});', ...
+                        'end');
+                    fid = fopen(char(tbxAliasFile), 'w');
+                    if fid ~= -1
+                        fprintf(fid, '%s', tbxContent);
+                        fclose(fid);
+                    end
+                end
+            end
+        catch
+            % Silently skip if directory is read-only or mfilename unavailable
+        end
+        tbxAliasChecked = true;
+    end
+
+    lastBaseDir = char(baseDir);
+end
+
+function cmd = tbx_resolveCommand(cmd)
+%TBX_RESOLVECOMMAND  Resolve abbreviated command to its full name.
+%   Inputs longer than 1 char that uniquely match a command prefix are expanded.
+%   Single-char or ambiguous inputs print a "Did you mean:" hint and return "".
+    arguments
+        cmd (1,1) string
+    end
+    cmd = lower(cmd);
+    knownCommands = ["install","uninstall","update","list","search","info", ...
+                     "lock","sync","init","selfupdate","source","enable", ...
+                     "disable","restorepath","require","cache","publish","help", ...
+                     "add","remove","check","tree"];
+
+    % Exact match — return immediately
+    if any(knownCommands == cmd)
+        return;
+    end
+
+    % Find all commands whose name starts with cmd
+    matches = knownCommands(startsWith(knownCommands, cmd));
+
+    if isempty(matches)
+        % No match — let switch/otherwise produce the standard error
+        return;
+    end
+
+    if numel(matches) == 1 && strlength(cmd) > 1
+        % Unique unambiguous abbreviation with more than one character
+        cmd = matches(1);
+        return;
+    end
+
+    % Single char or ambiguous — show "Did you mean:" with descriptions
+    if strlength(cmd) == 1
+        tbx_printf("Unknown command '%s'. Did you mean:\n\n", cmd);
+    else
+        tbx_printf("Ambiguous command '%s'. Did you mean:\n\n", cmd);
+    end
+    desc = tbx_commandDescriptions();
+    maxLen = max(strlength(matches));
+    for i = 1:numel(matches)
+        name = matches(i);
+        pad = repmat(' ', 1, maxLen - strlength(name) + 2);
+        d = "";
+        if isfield(desc, char(name))
+            d = desc.(char(name));
+        end
+        tbx_printf("  %s%s%s\n", name, pad, d);
+    end
+    tbx_printf("\nRun 'tbxmanager help <command>' for detailed usage.\n");
+    cmd = "";
+end
+
+function val = tbx_yesMode(newVal)
+%TBX_YESMODE  Get/set yes-mode flag (skips confirmation prompts).
+    persistent mode;
+    if isempty(mode), mode = false; end
+    if nargin > 0, mode = logical(newVal); end
+    val = mode;
+end
+
+function val = tbx_quietMode(newVal)
+%TBX_QUIETMODE  Get/set quiet-mode flag (suppresses tbx_printf output).
+    persistent mode;
+    if isempty(mode), mode = false; end
+    if nargin > 0, mode = logical(newVal); end
+    val = mode;
+end
+
+function tbx_resetFlags()
+%TBX_RESETFLAGS  Reset yes/quiet modes to false (called via onCleanup).
+    tbx_yesMode(false);
+    tbx_quietMode(false);
+end
+
+function tbx_clearColorCache()
+%TBX_CLEARCOLORCACHE  Clear the tbx_supportsColor persistent cache.
+%   Call this after changing TBXMANAGER_COLOR or NO_COLOR env vars.
+    clear tbx_supportsColor;
+end
+
+function tf = tbx_supportsColor()
+%TBX_SUPPORTSCOLOR  Return true if the current output supports ANSI color codes.
+%   Auto-detected from environment. Override with:
+%     setenv('TBXMANAGER_COLOR','1')  % force on
+%     setenv('TBXMANAGER_COLOR','0')  % force off
+%     setenv('NO_COLOR','1')          % disable (https://no-color.org)
+    persistent cache;
+    if ~isempty(cache), tf = cache; return; end
+    forceColor = string(getenv('TBXMANAGER_COLOR'));
+    if forceColor == "1"
+        cache = true; tf = true; return;
+    elseif forceColor == "0"
+        cache = false; tf = false; return;
+    end
+    noColor = string(getenv('NO_COLOR'));
+    if strlength(noColor) > 0
+        cache = false; tf = false; return;
+    end
+    if usejava('desktop')
+        % MATLAB Command Window does not render ANSI escape sequences
+        cache = false;
+    else
+        term      = string(getenv('TERM'));
+        colorterm = string(getenv('COLORTERM'));
+        cache = (strlength(term) > 0 && term ~= "dumb") || strlength(colorterm) > 0;
+    end
+    tf = cache;
+end
+
+function s = tbx_colorize(text, ansiCode)
+%TBX_COLORIZE  Wrap text in ANSI color code if color is supported.
+%   ansiCode examples: "31"=red, "32"=green, "33"=yellow, "1;32"=bold green, "2"=dim
+    if tbx_supportsColor()
+        s = sprintf('\033[%sm%s\033[0m', ansiCode, char(text));
+    else
+        s = char(text);
+    end
 end
 
 function d = tbx_baseDir()
@@ -314,12 +525,28 @@ end
 
 function result = tbx_compareVersions(v1, v2)
 %TBX_COMPAREVERSIONS  Compare two version strings. Returns -1, 0, or 1.
+%   Numeric versions (1.2.3) are compared numerically.
+%   Non-numeric versions (R20220609) are compared lexicographically.
     arguments
         v1 (1,1) string
         v2 (1,1) string
     end
     p1 = tbx_parseVersion(v1);
     p2 = tbx_parseVersion(v2);
+    % If either version is non-numeric (all zeros from failed parse),
+    % fall back to lexicographic comparison.
+    isNumeric1 = any(p1 > 0) || v1 == "0" || v1 == "0.0" || v1 == "0.0.0";
+    isNumeric2 = any(p2 > 0) || v2 == "0" || v2 == "0.0" || v2 == "0.0.0";
+    if ~isNumeric1 || ~isNumeric2
+        if v1 < v2
+            result = -1;
+        elseif v1 > v2
+            result = 1;
+        else
+            result = 0;
+        end
+        return;
+    end
     for i = 1:3
         if p1(i) < p2(i)
             result = -1;
@@ -467,12 +694,12 @@ function sources = tbx_getSources()
 %TBX_GETSOURCES  Return list of index source URLs.
     sourcesFile = fullfile(tbx_baseDir(), "state", "sources.json");
     if ~isfile(sourcesFile)
-        sources = "https://kvasnica.github.io/tbxmanager-registry/index.json";
+        sources = "https://marekwadinger.github.io/tbxmanager-registry/index.json";
         return;
     end
     data = tbx_readJson(sourcesFile);
     if ~isfield(data, "sources")
-        sources = "https://kvasnica.github.io/tbxmanager-registry/index.json";
+        sources = "https://marekwadinger.github.io/tbxmanager-registry/index.json";
         return;
     end
     raw = data.sources;
@@ -658,7 +885,6 @@ function plan = tbx_resolve(requested, index)
                   "platform", {}, "dependencies", {});
     resolved = containers.Map("KeyType", "char", "ValueType", "char");
     queue = requested(:)';
-    visited = containers.Map("KeyType", "char", "ValueType", "logical");
 
     maxIter = 500;
     iter = 0;
@@ -681,9 +907,6 @@ function plan = tbx_resolve(requested, index)
             continue;
         end
 
-        if visited.isKey(char(pkgName))
-            continue;
-        end
 
         % Find package in index
         if ~isfield(index.packages, char(pkgName))
@@ -707,12 +930,20 @@ function plan = tbx_resolve(requested, index)
         foundPlatform = "";
         foundDeps = struct();
 
+        % Determine if constraint is an exact pin (==X.Y.Z)
+        isExactPin = startsWith(strip(constraint), "==");
+
         for vi = 1:numel(allVersions)
             v = allVersions(vi);
             if ~tbx_satisfiesConstraint(v, constraint)
                 continue;
             end
             vInfo = tbx_getVersionField(pkgInfo.versions, v);
+
+            % Skip yanked versions unless explicitly pinned with ==
+            if isfield(vInfo, "yanked") && ~isempty(vInfo.yanked) && ~isExactPin
+                continue;
+            end
 
             % Check MATLAB version constraint
             if isfield(vInfo, "matlab") && ~isempty(vInfo.matlab)
@@ -753,13 +984,13 @@ function plan = tbx_resolve(requested, index)
         end
 
         if foundVersion == ""
+            availVers = strjoin(allVersions, ", ");
             error("TBXMANAGER:NoSatisfyingVersion", ...
-                "No version of '%s' satisfies constraint '%s' for platform '%s'.", ...
-                pkgName, constraint, arch);
+                "No version of '%s' satisfies '%s' for platform '%s'.\nAvailable: %s", ...
+                pkgName, constraint, arch, availVers);
         end
 
         resolved(char(pkgName)) = char(foundVersion);
-        visited(char(pkgName)) = true;
 
         entry.name = string(pkgName);
         entry.version = string(foundVersion);
@@ -816,16 +1047,7 @@ function vInfo = tbx_getVersionField(versions, versionStr)
     safeField = matlab.lang.makeValidName(char(versionStr));
     if isfield(versions, safeField)
         vInfo = versions.(safeField);
-    elseif isfield(versions, char(versionStr))
-        vInfo = versions.(char(versionStr));
     else
-        fns = fieldnames(versions);
-        for i = 1:numel(fns)
-            if string(fns{i}) == string(safeField)
-                vInfo = versions.(fns{i});
-                return;
-            end
-        end
         error("TBXMANAGER:VersionFieldNotFound", ...
             "Cannot access version '%s' in index.", versionStr);
     end
@@ -836,17 +1058,9 @@ function [url, sha, platform] = tbx_resolvePlatform(platforms, arch)
     url = "";
     sha = "";
     platform = "";
-    archField = matlab.lang.makeValidName(char(arch));
     % Try exact platform
     if isfield(platforms, char(arch))
         p = platforms.(char(arch));
-        if numel(p) > 1, p = p(1); end
-        url = tbx_scalarString(p.url);
-        sha = tbx_scalarString(p.sha256);
-        platform = string(arch);
-        return;
-    elseif isfield(platforms, archField)
-        p = platforms.(archField);
         if numel(p) > 1, p = p(1); end
         url = tbx_scalarString(p.url);
         sha = tbx_scalarString(p.sha256);
@@ -884,6 +1098,8 @@ end
 
 function sorted = tbx_sortVersionsDesc(versions)
 %TBX_SORTVERSIONSDESC  Sort version strings in descending order.
+%   Numeric versions (1.2.3) are sorted numerically.
+%   Non-numeric versions (R20220609) are sorted lexicographically descending.
     arguments
         versions string
     end
@@ -892,8 +1108,14 @@ function sorted = tbx_sortVersionsDesc(versions)
     for i = 1:n
         parsed(i,:) = tbx_parseVersion(versions(i));
     end
-    [~, idx] = sortrows(parsed, [-1, -2, -3]);
-    sorted = versions(idx);
+    % Detect if all versions are non-numeric (all zeros)
+    if n > 0 && all(parsed(:) == 0)
+        sorted = flipud(sort(versions(:)));
+        sorted = sorted(:)';
+    else
+        [~, idx] = sortrows(parsed, [-1, -2, -3]);
+        sorted = versions(idx);
+    end
 end
 
 function sorted = tbx_toposort(plan)
@@ -1021,13 +1243,11 @@ function tbx_removeFromPath(pkgName)
         pkgDir = string(enabled.(safeName).path);
         if isfolder(pkgDir)
             pathDirs = tbx_getPathDirs(pkgDir);
+            ws = warning('off', 'MATLAB:rmpath:DirNotFound');
             for i = 1:numel(pathDirs)
-                try
-                    rmpath(pathDirs{i});
-                catch
-                    % Ignore if not on path
-                end
+                rmpath(pathDirs{i});
             end
+            warning(ws);
         end
         enabled = rmfield(enabled, safeName);
         tbx_writeEnabled(enabled);
@@ -1183,13 +1403,29 @@ function main_install(args)
         return;
     end
 
+    % Warn about deprecated or yanked packages
+    for i = 1:numel(plan)
+        pName = char(plan(i).name);
+        if isfield(index.packages, pName)
+            pkgInfo = index.packages.(pName);
+            if isfield(pkgInfo, "deprecated") && ~isempty(pkgInfo.deprecated)
+                tbx_printWarning("Package '%s' is deprecated: %s", pName, string(pkgInfo.deprecated));
+            end
+            vInfo = tbx_getVersionField(pkgInfo.versions, plan(i).version);
+            if isfield(vInfo, "yanked") && ~isempty(vInfo.yanked)
+                tbx_printWarning("Version %s@%s is yanked: %s", pName, plan(i).version, string(vInfo.yanked));
+            end
+        end
+    end
+
     % Filter out already-installed at correct version
     toInstall = struct("name", {}, "version", {}, "url", {}, "sha256", {}, ...
                        "platform", {}, "dependencies", {});
     for i = 1:numel(plan)
         [isInst, instVer] = tbx_isInstalled(plan(i).name);
         if isInst && instVer == plan(i).version
-            tbx_printf("  %s@%s already installed.\n", plan(i).name, plan(i).version);
+            tbx_printf("  %s\n", tbx_colorize(sprintf("✓ %s@%s already installed", ...
+                plan(i).name, plan(i).version), "2"));
         else
             toInstall(end+1) = plan(i); %#ok<AGROW>
         end
@@ -1203,13 +1439,14 @@ function main_install(args)
     % Show plan
     tbx_printf("\nInstallation plan:\n");
     for i = 1:numel(toInstall)
-        tbx_printf("  %s@%s (%s)\n", toInstall(i).name, toInstall(i).version, toInstall(i).platform);
+        tbx_printf("  %s\n", tbx_colorize(sprintf("+ %s@%s (%s)", ...
+            toInstall(i).name, toInstall(i).version, toInstall(i).platform), "32"));
     end
     tbx_printf("\n");
 
     % Confirm (skip in non-interactive/batch mode)
     cfg = tbx_config();
-    if isfield(cfg, "confirm_install") && cfg.confirm_install && usejava('desktop')
+    if isfield(cfg, "confirm_install") && cfg.confirm_install && ~tbx_yesMode() && usejava('desktop')
         reply = input("Proceed? [Y/n]: ", "s");
         if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
             tbx_printf("Installation cancelled.\n");
@@ -1217,6 +1454,7 @@ function main_install(args)
         end
     end
 
+    t0 = tic;
     % Execute installation
     cacheDir = fullfile(tbx_baseDir(), "cache");
     for i = 1:numel(toInstall)
@@ -1225,7 +1463,11 @@ function main_install(args)
         tbx_installSinglePackage(pkg, cacheDir);
     end
 
-    tbx_printf("\nDone. %d package(s) installed.\n", numel(toInstall));
+    tbx_printSuccess("\nDone in %.1fs. %d package(s) installed.", toc(t0), numel(toInstall));
+    if isfile(fullfile(pwd, "tbxmanager.json"))
+        pkgList = strjoin(args, " ");
+        tbx_printf("Tip: In a project? Use 'tbxmanager add %s' to also record this in tbxmanager.json.\n", pkgList);
+    end
 end
 
 function tbx_installSinglePackage(pkg, cacheDir)
@@ -1250,7 +1492,7 @@ function tbx_installSinglePackage(pkg, cacheDir)
     end
 
     % Verify SHA256
-    if pkg.sha256 ~= "" && pkg.sha256 ~= "none"
+    if ~isempty(pkg.sha256) && strlength(string(pkg.sha256)) > 0 && string(pkg.sha256) ~= "none"
         tbx_printf("  Verifying SHA256...\n");
         actualHash = tbx_sha256(cacheFile);
         if actualHash ~= pkg.sha256
@@ -1276,47 +1518,57 @@ function tbx_installSinglePackage(pkg, cacheDir)
     if ~isfolder(destDir)
         mkdir(char(destDir));
     end
-    tbx_printf("  Extracting...\n");
-    tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
-    if isfolder(tmpDir)
-        rmdir(char(tmpDir), "s");
-    end
-    mkdir(char(tmpDir));
-    try
-        cacheStr = string(cacheFile);
-        if endsWith(cacheStr, ".tar.gz") || endsWith(cacheStr, ".tgz")
-            untar(char(cacheFile), char(tmpDir));
-        elseif endsWith(cacheStr, ".zip")
-            unzip(char(cacheFile), char(tmpDir));
-        else
-            error("TBXMANAGER:UnsupportedArchive", ...
-                "Unsupported archive format: %s", cacheFile);
+    % Single-file packages (.m, .p) — copy directly, no extraction needed
+    cacheStr = string(cacheFile);
+    [~, cacheBase, cacheExt] = fileparts(char(cacheStr));
+    isSingleFile = any(cacheExt == [".m", ".p"]);
+    if isSingleFile
+        tbx_printf("  Copying single-file package...\n");
+        copyfile(char(cacheFile), fullfile(char(destDir), cacheBase + cacheExt));
+    else
+        tbx_printf("  Extracting...\n");
+        tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
+        if isfolder(tmpDir)
+            rmdir(char(tmpDir), "s");
         end
-    catch ME
-        error("TBXMANAGER:ExtractFailed", ...
-            "Failed to extract %s: %s", cacheFile, ME.message);
+        mkdir(char(tmpDir));
+        try
+            if endsWith(cacheStr, ".tar.gz") || endsWith(cacheStr, ".tgz")
+                untar(char(cacheFile), char(tmpDir));
+            elseif endsWith(cacheStr, ".zip")
+                unzip(char(cacheFile), char(tmpDir));
+            else
+                error("TBXMANAGER:UnsupportedArchive", ...
+                    "Unsupported archive format: %s", cacheFile);
+            end
+        catch ME
+            error("TBXMANAGER:ExtractFailed", ...
+                "Failed to extract %s: %s", cacheFile, ME.message);
+        end
     end
 
-    % Flatten single top-level folder if present
-    tmpContents = dir(tmpDir);
-    tmpContents = tmpContents(~ismember({tmpContents.name}, {'.', '..'}));
-    if numel(tmpContents) == 1 && tmpContents(1).isdir
-        innerDir = fullfile(tmpDir, tmpContents(1).name);
-        movefile(fullfile(char(innerDir), "*"), char(destDir));
-        % Move hidden items
-        hiddenItems = dir(fullfile(innerDir, ".*"));
-        hiddenItems = hiddenItems(~ismember({hiddenItems.name}, {'.', '..'}));
-        for h = 1:numel(hiddenItems)
-            try
-                movefile(fullfile(char(innerDir), hiddenItems(h).name), char(destDir));
-            catch
+    % Flatten single top-level folder if present (archive installs only)
+    if ~isSingleFile
+        tmpContents = dir(tmpDir);
+        tmpContents = tmpContents(~ismember({tmpContents.name}, {'.', '..'}));
+        if numel(tmpContents) == 1 && tmpContents(1).isdir
+            innerDir = fullfile(tmpDir, tmpContents(1).name);
+            movefile(fullfile(char(innerDir), "*"), char(destDir));
+            % Move hidden items
+            hiddenItems = dir(fullfile(innerDir, ".*"));
+            hiddenItems = hiddenItems(~ismember({hiddenItems.name}, {'.', '..'}));
+            for h = 1:numel(hiddenItems)
+                try
+                    movefile(fullfile(char(innerDir), hiddenItems(h).name), char(destDir));
+                catch
+                end
             end
+        else
+            movefile(fullfile(char(tmpDir), "*"), char(destDir));
         end
-    else
-        movefile(fullfile(char(tmpDir), "*"), char(destDir));
-    end
-    if isfolder(tmpDir)
-        rmdir(char(tmpDir), "s");
+        if isfolder(tmpDir)
+            rmdir(char(tmpDir), "s");
+        end
     end
 
     % Write meta.json
@@ -1339,6 +1591,126 @@ function tbx_installSinglePackage(pkg, cacheDir)
         tbx_addToPath(pkg.name, pkg.version);
         tbx_printf("  Enabled %s@%s.\n", pkg.name, pkg.version);
     end
+end
+
+%% ========================================================================
+%  Command: add
+%  ========================================================================
+
+function main_add(args)
+%MAIN_ADD  Add packages to tbxmanager.json and sync the project.
+%   Project-scoped: edits tbxmanager.json, re-locks, and syncs.
+    if isempty(args)
+        tbx_printError("Usage: tbxmanager add pkg1[@constraint] ...");
+        return;
+    end
+    projectFile = fullfile(pwd, "tbxmanager.json");
+    if ~isfile(projectFile)
+        tbx_printError("No tbxmanager.json found. Run 'tbxmanager init' to create one.");
+        return;
+    end
+    project = tbx_readJson(projectFile);
+    origProject = project;  % snapshot for rollback on lock failure
+    if ~isfield(project, "dependencies")
+        project.dependencies = struct();
+    end
+    needsResolve = {};  % packages added without explicit constraint
+    addedMsgs   = {};  % deferred until lock succeeds
+    for i = 1:numel(args)
+        token = char(args(i));
+        % Accept both "pkg@constraint" and "pkg==1.0" / "pkg>=1.0" etc.
+        atIdx = strfind(token, "@");
+        opMatch = regexp(token, '^([a-z][a-z0-9_-]*)(==|~=|>=|<=|>|<)(.+)$', 'tokens');
+        if ~isempty(atIdx)
+            pkgName    = token(1:atIdx(1)-1);
+            constraint = token(atIdx(1)+1:end);
+        elseif ~isempty(opMatch)
+            pkgName    = char(opMatch{1}{1});
+            constraint = [char(opMatch{1}{2}), char(opMatch{1}{3})];
+        else
+            pkgName    = token;
+            constraint = "*";
+            needsResolve{end+1} = pkgName; %#ok<AGROW>
+        end
+        project.dependencies.(pkgName) = constraint;
+        addedMsgs{end+1} = sprintf("  + %s (%s)\n", pkgName, constraint); %#ok<AGROW>
+    end
+    % Write tentative project file; run lock+sync quietly — only summary shown.
+    tbx_writeJson(projectFile, project);
+    t0 = tic;
+    tbx_quietMode(true);
+    cleanupQ = onCleanup(@() tbx_quietMode(false));
+    try
+        main_lock(string.empty);
+    catch
+        tbx_quietMode(false);
+        tbx_writeJson(projectFile, origProject);
+        return;
+    end
+    tbx_quietMode(false);
+
+    % Back-fill resolved versions for packages added without a constraint.
+    lockFile = fullfile(pwd, "tbxmanager.lock");
+    if ~isempty(needsResolve) && isfile(lockFile)
+        lockData = tbx_readLock(lockFile);
+        for i = 1:numel(needsResolve)
+            pkgName = needsResolve{i};
+            if isfield(lockData, "packages") && isfield(lockData.packages, pkgName)
+                resolvedVer = string(lockData.packages.(pkgName).version);
+                project.dependencies.(pkgName) = char(">=" + resolvedVer);
+                addedMsgs{i} = sprintf("  + %s@>=%s\n", pkgName, resolvedVer);
+            end
+        end
+        tbx_writeJson(projectFile, project);
+    end
+
+    for i = 1:numel(addedMsgs)
+        tbx_printf("%s", addedMsgs{i});
+    end
+
+    tbx_quietMode(true);
+    main_sync(string.empty);
+    tbx_quietMode(false);
+    tbx_printSuccess("Done in %.1fs.", toc(t0));
+end
+
+%% ========================================================================
+%  Command: remove
+%  ========================================================================
+
+function main_remove(args)
+%MAIN_REMOVE  Remove packages from tbxmanager.json and sync the project.
+%   Project-scoped: edits tbxmanager.json, re-locks, and syncs.
+    if isempty(args)
+        tbx_printError("Usage: tbxmanager remove pkg1 [pkg2] ...");
+        return;
+    end
+    projectFile = fullfile(pwd, "tbxmanager.json");
+    if ~isfile(projectFile)
+        tbx_printError("No tbxmanager.json found. Run 'tbxmanager init' to create one.");
+        return;
+    end
+    project = tbx_readJson(projectFile);
+    if ~isfield(project, "dependencies")
+        tbx_printf("No dependencies in tbxmanager.json.\n");
+        return;
+    end
+    for i = 1:numel(args)
+        pkgName = char(args(i));
+        if isfield(project.dependencies, pkgName)
+            project.dependencies = rmfield(project.dependencies, pkgName);
+            tbx_printf("  - %s removed from tbxmanager.json\n", pkgName);
+        else
+            tbx_printWarning("'%s' is not listed in tbxmanager.json dependencies.", pkgName);
+        end
+    end
+    tbx_writeJson(projectFile, project);
+    t0 = tic;
+    tbx_quietMode(true);
+    main_lock(string.empty);
+    main_sync(string.empty);
+    tbx_quietMode(false);
+    tbx_printSuccess("Done in %.1fs.", toc(t0));
 end
 
 %% ========================================================================
@@ -1371,13 +1743,13 @@ function main_uninstall(args)
         revDeps = setdiff(revDeps, args);
         if ~isempty(revDeps)
             tbx_printWarning("Package '%s' is required by: %s", pkgName, strjoin(revDeps, ", "));
-            if usejava('desktop')
+            if ~tbx_yesMode() && usejava('desktop')
                 reply = input(sprintf("  Remove '%s' anyway? [y/N]: ", pkgName), "s");
                 if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
                     tbx_printf("  Skipping %s.\n", pkgName);
                     continue;
                 end
-            else
+            elseif ~tbx_yesMode()
                 tbx_printf("  Skipping %s (non-interactive mode).\n", pkgName);
                 continue;
             end
@@ -1406,6 +1778,10 @@ function main_uninstall(args)
         end
 
         tbx_printf("Uninstalled %s@%s.\n", pkgName, pkgVersion);
+    end
+    if isfile(fullfile(pwd, "tbxmanager.json"))
+        pkgList = strjoin(args, " ");
+        tbx_printf("Tip: In a project? Use 'tbxmanager remove %s' to also update tbxmanager.json.\n", pkgList);
     end
 end
 
@@ -1498,7 +1874,8 @@ function main_update(args)
     for i = 1:numel(plan)
         [isInst, oldVer] = tbx_isInstalled(plan(i).name);
         if isInst && oldVer ~= plan(i).version
-            tbx_printf("  %s: %s -> %s\n", plan(i).name, oldVer, plan(i).version);
+            tbx_printf("  %s\n", tbx_colorize(sprintf("~ %s: %s -> %s", ...
+                plan(i).name, oldVer, plan(i).version), "33"));
         elseif ~isInst
             tbx_printf("  %s: (new) %s\n", plan(i).name, plan(i).version);
         else
@@ -1507,7 +1884,7 @@ function main_update(args)
     end
     tbx_printf("\n");
 
-    if usejava('desktop')
+    if ~tbx_yesMode() && usejava('desktop')
         reply = input("Proceed? [Y/n]: ", "s");
         if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
             tbx_printf("Update cancelled.\n");
@@ -1515,6 +1892,7 @@ function main_update(args)
         end
     end
 
+    t0 = tic;
     % Execute updates
     cacheDir = fullfile(tbx_baseDir(), "cache");
     updated = 0;
@@ -1529,7 +1907,7 @@ function main_update(args)
         updated = updated + 1;
     end
 
-    tbx_printf("\nDone. %d package(s) updated.\n", updated);
+    tbx_printSuccess("\nDone in %.1fs. %d package(s) updated.", toc(t0), updated);
 end
 
 %% ========================================================================
@@ -1623,7 +2001,11 @@ function main_search(args)
             desc = string(pkgInfo.description);
         end
         if contains(lower(string(name)), query) || contains(lower(desc), query)
-            matchNames{end+1} = name; %#ok<AGROW>
+            displayName = name;
+            if isfield(pkgInfo, "deprecated") && ~isempty(pkgInfo.deprecated)
+                displayName = [name, ' [DEPRECATED]']; %#ok<AGROW>
+            end
+            matchNames{end+1} = displayName; %#ok<AGROW>
             matchDescs{end+1} = char(desc); %#ok<AGROW>
             if isfield(pkgInfo, "latest")
                 matchVers{end+1} = char(string(pkgInfo.latest)); %#ok<AGROW>
@@ -1664,6 +2046,9 @@ function main_info(args)
     pkg = index.packages.(char(pkgName));
 
     tbx_printf("Package: %s\n", pkgName);
+    if isfield(pkg, "deprecated") && ~isempty(pkg.deprecated)
+        tbx_printWarning("DEPRECATED: %s", string(pkg.deprecated));
+    end
     if isfield(pkg, "description")
         tbx_printf("Description: %s\n", string(pkg.description));
     end
@@ -1700,6 +2085,9 @@ function main_info(args)
             v = verNames(i);
             vInfo = tbx_getVersionField(pkg.versions, v);
             extra = "";
+            if isfield(vInfo, "yanked") && ~isempty(vInfo.yanked)
+                extra = extra + " [YANKED: " + string(vInfo.yanked) + "]";
+            end
             if isfield(vInfo, "released")
                 extra = extra + " (released: " + string(vInfo.released) + ")";
             end
@@ -1754,6 +2142,7 @@ function main_lock(~)
         end
     catch ME
         tbx_printError("Lock generation failed: %s", ME.message);
+        rethrow(ME);
     end
 end
 
@@ -1785,7 +2174,9 @@ function main_sync(~)
     end
 
     toInstall = {};
-    toRemove = {};
+    toDisable = {};
+
+    lockSet = string(pkgNames);
 
     % Find packages to install/update
     for i = 1:numel(pkgNames)
@@ -1802,63 +2193,42 @@ function main_sync(~)
         end
     end
 
-    % Find packages to remove (installed but not in lock)
-    lockSet = string(pkgNames);
-    for i = 1:numel(installed)
-        if ~any(lockSet == installed(i).name)
-            toRemove{end+1} = char(installed(i).name); %#ok<AGROW>
+    % Find enabled packages not in lock → disable from path (never delete from disk)
+    enabled = tbx_loadEnabled();
+    enabledNames = fieldnames(enabled);
+    for i = 1:numel(enabledNames)
+        [~, actualName] = fileparts(fileparts(char(enabled.(enabledNames{i}).path)));
+        if ~any(lockSet == string(actualName))
+            toDisable{end+1} = actualName; %#ok<AGROW>
         end
     end
 
-    if isempty(toInstall) && isempty(toRemove)
+    if isempty(toInstall) && isempty(toDisable)
         tbx_printf("Everything is up to date.\n");
         return;
     end
 
+    if ~isempty(toDisable)
+        tbx_printf("Disabling %d package(s) not in project lock:\n", numel(toDisable));
+        for i = 1:numel(toDisable)
+            tbx_printf("  - %s\n", toDisable{i});
+        end
+    end
     if ~isempty(toInstall)
-        tbx_printf("\nPackages to install/update:\n");
+        tbx_printf("Installing/updating %d package(s):\n", numel(toInstall));
         for i = 1:numel(toInstall)
             name = toInstall{i};
             ver = lockData.packages.(name).version;
-            tbx_printf("  %s@%s\n", name, ver);
+            tbx_printf("  + %s@%s\n", name, ver);
         end
     end
-    if ~isempty(toRemove)
-        tbx_printf("\nPackages to remove (not in lock file):\n");
-        for i = 1:numel(toRemove)
-            tbx_printf("  %s\n", toRemove{i});
-        end
-    end
-
     tbx_printf("\n");
-    if usejava('desktop')
-        reply = input("Proceed? [Y/n]: ", "s");
-        if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
-            tbx_printf("Sync cancelled.\n");
-            return;
-        end
-    end
 
-    % Remove extra packages
-    for i = 1:numel(toRemove)
-        pkgNameStr = string(toRemove{i});
-        [~, pkgVer] = tbx_isInstalled(pkgNameStr);
-        tbx_removeFromPath(pkgNameStr);
-        pkgDir = tbx_installDir(pkgNameStr, pkgVer);
-        if isfolder(pkgDir)
-            rmdir(char(pkgDir), "s");
-        end
-        parentDir = fullfile(tbx_baseDir(), "packages", pkgNameStr);
-        if isfolder(parentDir)
-            contents = dir(parentDir);
-            contents = contents(~ismember({contents.name}, {'.', '..'}));
-            if isempty(contents)
-                rmdir(char(parentDir));
-            end
-        end
-        tbx_printf("Removed %s.\n", pkgNameStr);
+    t0 = tic;
+    % Disable packages not in the project lock (path only — disk untouched)
+    for i = 1:numel(toDisable)
+        tbx_removeFromPath(string(toDisable{i}));
     end
-
     % Install/update packages from lock
     cacheDir = fullfile(tbx_baseDir(), "cache");
     for i = 1:numel(toInstall)
@@ -1888,7 +2258,7 @@ function main_sync(~)
         tbx_installSinglePackage(pkg, cacheDir);
     end
 
-    tbx_printf("\nSync complete.\n");
+    tbx_printSuccess("\nSync complete in %.1fs.", toc(t0));
 end
 
 %% ========================================================================
@@ -1900,24 +2270,42 @@ function main_init(~)
     projectFile = fullfile(pwd, "tbxmanager.json");
     if isfile(projectFile)
         tbx_printWarning("tbxmanager.json already exists in current directory.");
-        if ~usejava('desktop')
+        if ~tbx_yesMode() && ~usejava('desktop')
             return;
-        end
-        reply = input("Overwrite? [y/N]: ", "s");
-        if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
-            tbx_printf("Cancelled.\n");
-            return;
+        elseif ~tbx_yesMode()
+            reply = input("Overwrite? [y/N]: ", "s");
+            if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
+                tbx_printf("Cancelled.\n");
+                return;
+            end
         end
     end
 
     [~, dirName] = fileparts(pwd);
-    project.name = char(dirName);
+    project.name = char(lower(dirName));
+    project.version = "0.1.0";
+    project.description = "";
     project.matlab = char(">=" + tbx_matlabRelease());
+    project.platforms.all = "";
     project.dependencies = struct();
 
     tbx_writeJson(projectFile, project);
     tbx_printf("Created %s\n", projectFile);
-    tbx_printf("Edit the file to add dependencies, then run 'tbxmanager lock'.\n");
+
+    % Entering project mode: disable all currently-enabled global packages.
+    % Re-enable with 'tbxmanager restorepath' after leaving the project.
+    enabled = tbx_loadEnabled();
+    enabledNames = fieldnames(enabled);
+    if ~isempty(enabledNames)
+        tbx_printf("Disabling %d global package(s) for project isolation.\n", numel(enabledNames));
+        for i = 1:numel(enabledNames)
+            [~, actualName] = fileparts(fileparts(char(enabled.(enabledNames{i}).path)));
+            tbx_removeFromPath(string(actualName));
+        end
+    end
+
+    tbx_printf("Fill in 'description' and 'platforms' URLs, then run 'tbxmanager add <pkg>'.\n");
+    tbx_printf("Use 'tbxmanager restorepath' to re-enable global packages when done.\n");
 end
 
 %% ========================================================================
@@ -2190,6 +2578,390 @@ end
 %  Command: help
 %  ========================================================================
 
+function main_publish(~)
+%MAIN_PUBLISH  Publish package to the tbxmanager registry.
+%   Reads tbxmanager.json, builds an archive, creates a GitHub release,
+%   uploads the archive, and submits a registry issue.
+    REGISTRY_REPO = "MarekWadinger/tbxmanager-registry";
+
+    % 1. Read and validate tbxmanager.json
+    projectFile = fullfile(pwd, "tbxmanager.json");
+    if ~isfile(projectFile)
+        tbx_printError("No tbxmanager.json found. Run 'tbxmanager init' first.");
+        return;
+    end
+    pkg = tbx_readJson(projectFile);
+    for f = ["name", "version", "description", "platforms"]
+        if ~isfield(pkg, f)
+            tbx_printError("tbxmanager.json missing required field: %s", f);
+            return;
+        end
+    end
+    name = string(pkg.name);
+    ver = string(pkg.version);
+    tbx_printf("Publishing %s v%s\n\n", name, ver);
+
+    % 2. Determine platform
+    platNames = string(fieldnames(pkg.platforms));
+    if isscalar(platNames)
+        platform = platNames(1);
+    else
+        tbx_printf("Platforms: %s\n", strjoin(platNames, ", "));
+        tbx_printError("Multi-platform publish not yet supported. Publish each platform separately.");
+        return;
+    end
+
+    % 3. Get GitHub token
+    token = tbx_getGithubToken();
+    if token == ""
+        return;
+    end
+
+    % 4. Parse repository URL from homepage
+    if isfield(pkg, "homepage")
+        repoUrl = string(pkg.homepage);
+    else
+        repoUrl = string(input("GitHub repository URL: ", "s"));
+    end
+    parts = split(replace(repoUrl, "https://github.com/", ""), "/");
+    if numel(parts) < 2
+        tbx_printError("Invalid GitHub URL: %s", repoUrl);
+        return;
+    end
+    owner = parts(1);
+    repo = parts(2);
+
+    % 5. Build archive
+    excludes = [".git", ".github", "tests", "docs", "tbxmanager.json"];
+    if isfield(pkg, "publish") && isfield(pkg.publish, "exclude")
+        excludes = string(pkg.publish.exclude);
+    end
+    archiveName = name + "-" + platform + ".zip";
+    archivePath = fullfile(tempdir, archiveName);
+    tbx_printf("Building archive...");
+    tbx_buildArchive(archivePath, excludes);
+    d = dir(archivePath);
+    tbx_printf(" done (%s, %d KB)\n", archiveName, round(d.bytes / 1024));
+
+    % 6. Compute SHA256
+    hash = tbx_sha256(archivePath);
+    tbx_printf("SHA256: %s\n", hash);
+
+    % 7. Create or find GitHub release
+    tag = "v" + ver;
+    apiBase = "https://api.github.com/repos/" + owner + "/" + repo;
+    tbx_printf("Creating release %s...", tag);
+    try
+        releaseBody.tag_name = char(tag);
+        releaseBody.name = char(tag);
+        releaseBody.draft = false;
+        releaseBody.prerelease = false;
+        release = tbx_githubApi("POST", apiBase + "/releases", token, releaseBody);
+        tbx_printf(" done\n");
+    catch ME
+        if contains(ME.message, "already_exists") || contains(ME.message, "422")
+            tbx_printf(" already exists, reusing\n");
+            release = tbx_githubApi("GET", apiBase + "/releases/tags/" + tag, token);
+        else
+            tbx_printError("Failed to create release: %s", ME.message);
+            return;
+        end
+    end
+
+    % 8. Upload archive to release
+    uploadUrl = string(release.upload_url);
+    uploadUrl = replace(uploadUrl, "{?name,label}", "");
+    uploadUrl = uploadUrl + "?name=" + archiveName;
+    tbx_printf("Uploading archive...");
+    try
+        fid = fopen(archivePath, 'r');
+        cleanObj = onCleanup(@() fclose(fid));
+        data = fread(fid, '*uint8')';
+        opts = weboptions( ...
+            'MediaType', 'application/zip', ...
+            'HeaderFields', {'Authorization', "token " + token; ...
+                             'Content-Type', 'application/zip'}, ...
+            'Timeout', 300);
+        webwrite(uploadUrl, data, opts);
+        tbx_printf(" done\n");
+    catch ME
+        if contains(ME.message, "already_exists")
+            tbx_printf(" already uploaded\n");
+        else
+            tbx_printError("Failed to upload: %s", ME.message);
+            return;
+        end
+    end
+
+    % 9. Submit to registry via issue
+    assetUrl = "https://github.com/" + owner + "/" + repo + ...
+               "/releases/download/" + tag + "/" + archiveName;
+    if platform == "all"
+        platformLabel = "all (pure MATLAB, no MEX files)";
+    else
+        platformLabel = platform;
+    end
+    issueBody = sprintf("### Repository URL\n\n%s\n\n### Release tag\n\n%s\n\n### Platform\n\n%s", ...
+        "https://github.com/" + owner + "/" + repo, tag, platformLabel);
+    issueData.title = char("Submit: " + name + "@" + ver);
+    issueData.body = char(issueBody);
+    issueData.labels = {'submit-package'};
+    tbx_printf("Submitting to registry...");
+    try
+        issue = tbx_githubApi("POST", ...
+            "https://api.github.com/repos/" + REGISTRY_REPO + "/issues", ...
+            token, issueData);
+        tbx_printf(" done\n\n");
+        tbx_printf("Submission created! A maintainer will review your package.\n");
+        tbx_printf("Track progress: %s\n", string(issue.html_url));
+    catch ME
+        tbx_printError("Failed to submit: %s", ME.message);
+    end
+
+    % Cleanup
+    delete(archivePath);
+end
+
+function token = tbx_getGithubToken()
+%TBX_GETGITHUBTOKEN  Get GitHub token from config or prompt user.
+    cfgFile = fullfile(tbx_baseDir(), "config.json");
+    cfg = tbx_config();
+    if isfield(cfg, "github_token") && strlength(string(cfg.github_token)) > 0
+        token = string(cfg.github_token);
+        return;
+    end
+    tbx_printf("GitHub token not configured.\n");
+    tbx_printf("Create a classic token with 'public_repo' scope at:\n");
+    tbx_printf("  https://github.com/settings/tokens/new?scopes=public_repo\n\n");
+    tokenStr = input("Enter token (or press Enter to cancel): ", "s");
+    if isempty(tokenStr)
+        token = "";
+        return;
+    end
+    token = string(tokenStr);
+    cfg.github_token = char(token);
+    tbx_writeJson(cfgFile, cfg);
+    tbx_printf("Token saved to config.\n\n");
+end
+
+function resp = tbx_githubApi(method, url, token, body)
+%TBX_GITHUBAPI  Make an authenticated GitHub API request.
+    arguments
+        method (1,1) string
+        url (1,1) string
+        token (1,1) string
+        body = []
+    end
+    opts = weboptions( ...
+        'HeaderFields', {'Authorization', "token " + token; ...
+                         'Accept', 'application/vnd.github+json'}, ...
+        'Timeout', 60, ...
+        'ContentType', 'json');
+    if method == "GET"
+        resp = webread(url, opts);
+    else
+        if isempty(body)
+            resp = webwrite(url, opts);
+        else
+            resp = webwrite(url, body, opts);
+        end
+    end
+end
+
+function tbx_buildArchive(archivePath, excludePatterns)
+%TBX_BUILDARCHIVE  Build a zip archive of the current directory.
+    arguments
+        archivePath (1,1) string
+        excludePatterns (1,:) string
+    end
+    allFiles = dir(fullfile(pwd, '**', '*'));
+    allFiles = allFiles(~[allFiles.isdir]);
+    baseDir = pwd;
+    keep = {};
+    for i = 1:numel(allFiles)
+        relPath = strrep(fullfile(allFiles(i).folder, allFiles(i).name), ...
+                         [baseDir filesep], '');
+        excluded = false;
+        for j = 1:numel(excludePatterns)
+            pat = excludePatterns(j);
+            if startsWith(relPath, pat) || startsWith(relPath, pat + filesep)
+                excluded = true;
+                break;
+            end
+            if contains(pat, "*")
+                % Glob pattern like "*.mat"
+                ext = extractAfter(pat, "*");
+                if endsWith(relPath, ext)
+                    excluded = true;
+                    break;
+                end
+            end
+        end
+        if ~excluded
+            keep{end+1} = fullfile(allFiles(i).folder, allFiles(i).name); %#ok<AGROW>
+        end
+    end
+    if isempty(keep)
+        error("TBXMANAGER:EmptyArchive", "No files to archive after applying exclusions.");
+    end
+    zip(archivePath, keep, baseDir);
+end
+
+%% ========================================================================
+%  Command: check
+%  ========================================================================
+
+function main_check(~)
+%MAIN_CHECK  Verify installed packages match the lock file in CWD.
+    lockFile = fullfile(pwd, "tbxmanager.lock");
+    if ~isfile(lockFile)
+        tbx_printError("No tbxmanager.lock in current directory. Run 'tbxmanager lock' first.");
+        return;
+    end
+
+    lockData = tbx_readLock(lockFile);
+    if ~isfield(lockData, "packages")
+        tbx_printf("No packages in lock file.\n");
+        return;
+    end
+
+    installed = tbx_listInstalled();
+    installedMap = containers.Map("KeyType", "char", "ValueType", "char");
+    for i = 1:numel(installed)
+        installedMap(char(installed(i).name)) = char(installed(i).version);
+    end
+
+    lockNames = fieldnames(lockData.packages);
+    allOk = true;
+
+    % Check every package in lock
+    for i = 1:numel(lockNames)
+        name    = lockNames{i};
+        reqVer  = string(lockData.packages.(name).version);
+        if installedMap.isKey(name)
+            instVer = string(installedMap(name));
+            if instVer == reqVer
+                tbx_printf("  %s %s@%s\n", tbx_colorize("✓", "32"), name, instVer);
+            else
+                tbx_printf("  %s %s@%s (lock requires %s)\n", ...
+                    tbx_colorize("✗", "31"), name, instVer, reqVer);
+                allOk = false;
+            end
+        else
+            tbx_printf("  %s %s not installed (lock requires %s)\n", ...
+                tbx_colorize("!", "33"), name, reqVer);
+            allOk = false;
+        end
+    end
+
+    % Check for installed packages not in lock
+    lockSet = string(lockNames);
+    for i = 1:numel(installed)
+        name = char(installed(i).name);
+        if ~any(lockSet == string(name))
+            tbx_printf("  %s %s@%s not in lock file\n", ...
+                tbx_colorize("!", "33"), name, installed(i).version);
+            allOk = false;
+        end
+    end
+
+    tbx_printf("\n");
+    if allOk
+        tbx_printSuccess("All packages match lock file.");
+    else
+        tbx_printf("Run 'tbxmanager sync' to bring environment in sync with lock.\n");
+    end
+end
+
+%% ========================================================================
+%  Command: tree
+%  ========================================================================
+
+function main_tree(~)
+%MAIN_TREE  Show installed packages as a dependency tree.
+    installed = tbx_listInstalled();
+    if isempty(installed)
+        tbx_printf("No packages installed.\n");
+        return;
+    end
+
+    % Build name -> pkg map
+    pkgMap = containers.Map("KeyType", "char", "ValueType", "any");
+    for i = 1:numel(installed)
+        pkgMap(char(installed(i).name)) = installed(i);
+    end
+
+    % Find packages that are depended on by others
+    depSet = containers.Map("KeyType", "char", "ValueType", "logical");
+    for i = 1:numel(installed)
+        meta = installed(i).meta;
+        if isfield(meta, "dependencies") && isstruct(meta.dependencies)
+            dNames = fieldnames(meta.dependencies);
+            for j = 1:numel(dNames)
+                depSet(dNames{j}) = true;
+            end
+        end
+    end
+
+    % Root packages = installed but not a dependency of anything else
+    roots = {};
+    for i = 1:numel(installed)
+        if ~depSet.isKey(char(installed(i).name))
+            roots{end+1} = char(installed(i).name); %#ok<AGROW>
+        end
+    end
+    if isempty(roots)
+        % All packages are transitive deps (possible circular) — show all as roots
+        for i = 1:numel(installed)
+            roots{end+1} = char(installed(i).name); %#ok<AGROW>
+        end
+    end
+
+    visited = containers.Map("KeyType", "char", "ValueType", "logical");
+    for i = 1:numel(roots)
+        name = string(roots{i});
+        if pkgMap.isKey(char(name))
+            pkg = pkgMap(char(name));
+            tbx_printf("%s@%s\n", tbx_colorize(pkg.name, "1"), pkg.version);
+            visited(char(name)) = true;
+            tbx_treeChildren(name, pkgMap, visited, "");
+        end
+    end
+end
+
+function tbx_treeChildren(pkgName, pkgMap, visited, prefix)
+%TBX_TREECHILDREN  Recursively print child dependencies.
+    if ~pkgMap.isKey(char(pkgName)), return; end
+    pkg = pkgMap(char(pkgName));
+    deps = {};
+    if isfield(pkg.meta, "dependencies") && isstruct(pkg.meta.dependencies)
+        deps = fieldnames(pkg.meta.dependencies);
+    end
+    for i = 1:numel(deps)
+        depName = string(deps{i});
+        isLast = (i == numel(deps));
+        if isLast
+            connector    = "└── ";
+            childPrefix  = prefix + "    ";
+        else
+            connector    = "├── ";
+            childPrefix  = prefix + "│   ";
+        end
+        if pkgMap.isKey(char(depName))
+            depPkg = pkgMap(char(depName));
+            tbx_printf("%s%s%s@%s\n", prefix, connector, ...
+                tbx_colorize(depPkg.name, "1"), depPkg.version);
+            if ~visited.isKey(char(depName))
+                visited(char(depName)) = true;
+                tbx_treeChildren(depName, pkgMap, visited, childPrefix);
+            end
+        else
+            tbx_printf("%s%s%s\n", prefix, connector, ...
+                tbx_colorize(depName + " (not installed)", "2"));
+        end
+    end
+end
+
 function main_help(args)
 %MAIN_HELP  Display help text.
     if ~isempty(args)
@@ -2210,6 +2982,24 @@ function main_help(args)
             tbx_printf("  pkg@==1.2.3      Exact version\n");
             tbx_printf("  pkg@~=1.2        Compatible release (>=1.2, <2.0)\n");
             tbx_printf("  pkg@>=1.0,<2.0   Range (comma = AND)\n");
+
+        case "add"
+            tbx_printf("tbxmanager add - Add packages to project\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager add pkg1 [pkg2@>=1.0] ...\n\n");
+            tbx_printf("Adds packages to tbxmanager.json, regenerates the lock file,\n");
+            tbx_printf("and syncs the project (downloads and enables the pinned versions).\n\n");
+            tbx_printf("Requires tbxmanager.json in the current directory.\n");
+            tbx_printf("Use 'tbxmanager install' for a global install without a project file.\n");
+
+        case "remove"
+            tbx_printf("tbxmanager remove - Remove packages from project\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager remove pkg1 [pkg2] ...\n\n");
+            tbx_printf("Removes packages from tbxmanager.json, regenerates the lock file,\n");
+            tbx_printf("and syncs (uninstalls packages no longer in the lock).\n\n");
+            tbx_printf("Requires tbxmanager.json in the current directory.\n");
+            tbx_printf("Use 'tbxmanager uninstall' to remove a globally installed package.\n");
 
         case "uninstall"
             tbx_printf("tbxmanager uninstall - Remove packages\n\n");
@@ -2306,38 +3096,99 @@ function main_help(args)
             tbx_printf("  tbxmanager cache list    Show cached files\n");
             tbx_printf("  tbxmanager cache clean   Remove all cached files\n");
 
+        case "publish"
+            tbx_printf("tbxmanager publish - Publish package to the registry\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager publish\n\n");
+            tbx_printf("Reads tbxmanager.json from the current directory, builds a zip\n");
+            tbx_printf("archive, creates a GitHub release, uploads the archive, and\n");
+            tbx_printf("submits a package to the tbxmanager registry.\n\n");
+            tbx_printf("Requires a GitHub token with 'public_repo' scope.\n");
+            tbx_printf("The token is prompted on first use and saved to config.\n");
+
+        case "check"
+            tbx_printf("tbxmanager check - Verify lock file consistency\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager check\n\n");
+            tbx_printf("Compares installed packages against tbxmanager.lock in the current\n");
+            tbx_printf("directory. Reports mismatches without making any changes.\n\n");
+            tbx_printf("  ✓  package matches lock\n");
+            tbx_printf("  ✗  version mismatch\n");
+            tbx_printf("  !  missing or extra package\n\n");
+            tbx_printf("Run 'tbxmanager sync' to fix any discrepancies.\n");
+
+        case "tree"
+            tbx_printf("tbxmanager tree - Show dependency tree\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager tree\n\n");
+            tbx_printf("Display installed packages as a tree showing their dependencies.\n");
+            tbx_printf("Root packages (not a dependency of anything else) are shown at the top.\n");
+
         otherwise
-            tbx_printf("tbxmanager v2.0 - MATLAB Package Manager\n\n");
-            tbx_printf("Usage: tbxmanager <command> [arguments]\n\n");
-            tbx_printf("Package commands:\n");
-            tbx_printf("  install       Install packages with dependency resolution\n");
-            tbx_printf("  uninstall     Remove installed packages\n");
-            tbx_printf("  update        Update packages to latest versions\n");
-            tbx_printf("  list          Show installed packages\n");
-            tbx_printf("  search        Search available packages\n");
-            tbx_printf("  info          Show package details\n");
-            tbx_printf("\nProject commands:\n");
-            tbx_printf("  init          Create tbxmanager.json template\n");
-            tbx_printf("  lock          Generate tbxmanager.lock from tbxmanager.json\n");
-            tbx_printf("  sync          Install from tbxmanager.lock\n");
-            tbx_printf("\nPath commands:\n");
-            tbx_printf("  enable        Add packages to MATLAB path\n");
-            tbx_printf("  disable       Remove packages from MATLAB path\n");
-            tbx_printf("  restorepath   Restore paths for enabled packages\n");
-            tbx_printf("  require       Assert packages are enabled\n");
-            tbx_printf("\nMaintenance commands:\n");
-            tbx_printf("  selfupdate    Update tbxmanager itself\n");
-            tbx_printf("  source        Manage index sources (add/remove/list)\n");
-            tbx_printf("  cache         Manage download cache (clean/list)\n");
-            tbx_printf("  help          Show this help or help for a command\n");
-            tbx_printf("\nExamples:\n");
-            tbx_printf("  tbxmanager install mpt\n");
-            tbx_printf("  tbxmanager install mpt@>=3.0 cddmex\n");
+            desc = tbx_commandDescriptions();
+            tbx_printf("%s\n\n", tbx_colorize("tbxmanager v2.0 - MATLAB Package Manager", "1"));
+            tbx_printf("Usage: tbxmanager <command> [arguments]  (alias: tbx)\n\n");
+            tbx_printf("%s\n", tbx_colorize("Global commands  (affect ~/.tbxmanager):", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","install"),   "1"), desc.install);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","uninstall"), "1"), desc.uninstall);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","update"),    "1"), desc.update);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","list"),      "1"), desc.list);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","search"),    "1"), desc.search);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","info"),      "1"), desc.info);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","tree"),      "1"), desc.tree);
+            tbx_printf("\n%s\n", tbx_colorize("Project commands  (require tbxmanager.json in CWD):", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","add"),     "1"), desc.add);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","remove"),  "1"), desc.remove);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","init"),    "1"), desc.init);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","lock"),    "1"), desc.lock);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","sync"),    "1"), desc.sync);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","check"),   "1"), desc.check);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","publish"), "1"), desc.publish);
+            tbx_printf("\n%s\n", tbx_colorize("Path commands:", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","enable"),      "1"), desc.enable);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","disable"),     "1"), desc.disable);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","restorepath"), "1"), desc.restorepath);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","require"),     "1"), desc.require);
+            tbx_printf("\n%s\n", tbx_colorize("Maintenance:", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","selfupdate"), "1"), desc.selfupdate);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","source"),     "1"), desc.source);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","cache"),      "1"), desc.cache);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","help"),       "1"), desc.help);
+            tbx_printf("\n%s\n", tbx_colorize("Examples:", "33"));
+            tbx_printf("  tbxmanager install mpt          %% global, no project needed\n");
+            tbx_printf("  tbxmanager add mpt@>=3.0        %% project: edits tbxmanager.json\n");
             tbx_printf("  tbxmanager update\n");
             tbx_printf("  tbxmanager search parametric\n");
             tbx_printf("  tbxmanager help install\n");
-            tbx_printf("\nStorage: %s\n", tbx_baseDir());
+            tbx_printf("\nCommands can be abbreviated to their unique prefix (e.g., 'inst' for 'install').\n");
+            tbx_printf("Storage: %s\n", tbx_colorize(tbx_baseDir(), "2"));
     end
+end
+
+function desc = tbx_commandDescriptions()
+%TBX_COMMANDDESCRIPTIONS  Return one-line descriptions for all commands.
+    desc.install     = "Install packages with dependency resolution";
+    desc.uninstall   = "Remove installed packages";
+    desc.update      = "Update packages to latest versions";
+    desc.list        = "Show installed packages";
+    desc.search      = "Search available packages";
+    desc.info        = "Show package details";
+    desc.lock        = "Generate tbxmanager.lock from tbxmanager.json";
+    desc.sync        = "Install from tbxmanager.lock";
+    desc.init        = "Create tbxmanager.json template";
+    desc.publish     = "Publish package to the registry";
+    desc.source      = "Manage index sources (add/remove/list)";
+    desc.enable      = "Add packages to MATLAB path";
+    desc.disable     = "Remove packages from MATLAB path";
+    desc.restorepath = "Restore paths for enabled packages";
+    desc.require     = "Assert packages are enabled";
+    desc.selfupdate  = "Update tbxmanager itself";
+    desc.cache       = "Manage download cache (clean/list)";
+    desc.help        = "Show this help or help for a command";
+    desc.add         = "Add packages to project (edits tbxmanager.json + sync)";
+    desc.remove      = "Remove packages from project (edits tbxmanager.json + sync)";
+    desc.check       = "Verify installed packages match the lock file";
+    desc.tree        = "Show installed packages as a dependency tree";
 end
 
 function result = main_internal(args)
@@ -2392,6 +3243,22 @@ function result = main_internal(args)
             result = true;
         case "toposort"
             result = tbx_toposort(jsondecode(funcArgs(1)));
+        case "buildArchive"
+            tbx_buildArchive(funcArgs(1), funcArgs(2:end));
+            result = true;
+        case "fetchJson"
+            result = tbx_fetchJson(funcArgs(1));
+        case "formatBytes"
+            result = tbx_formatBytes(str2double(funcArgs(1)));
+        case "satisfiesMatlabConstraint"
+            result = tbx_satisfiesMatlabConstraint(funcArgs(1));
+        case "matlabRelease"
+            result = tbx_matlabRelease();
+        case "addToPath"
+            tbx_addToPath(funcArgs(1), funcArgs(2));
+            result = true;
+        case "resolveCommand"
+            result = tbx_resolveCommand(funcArgs(1));
         otherwise
             error("TBXMANAGER:Internal", "Unknown internal function: %s", funcName);
     end
@@ -2402,7 +3269,8 @@ end
 %  ========================================================================
 
 function tbx_printf(fmt, varargin)
-%TBX_PRINTF  Print formatted message to console.
+%TBX_PRINTF  Print formatted message to console (suppressed in quiet mode).
+    if tbx_quietMode(), return; end
     fprintf(fmt, varargin{:});
 end
 
@@ -2446,15 +3314,22 @@ function tbx_printTable(headers, columns)
 end
 
 function tbx_printError(fmt, varargin)
-%TBX_PRINTERROR  Print error message to stderr.
+%TBX_PRINTERROR  Print an error message in red to stderr.
     msg = sprintf(fmt, varargin{:});
-    fprintf(2, "Error: %s\n", msg);
+    fprintf(2, '%s\n', tbx_colorize(sprintf('Error: %s', msg), '31'));
 end
 
 function tbx_printWarning(fmt, varargin)
-%TBX_PRINTWARNING  Print warning message to stderr.
+%TBX_PRINTWARNING  Print a warning message in yellow to stderr.
     msg = sprintf(fmt, varargin{:});
-    fprintf(2, "Warning: %s\n", msg);
+    fprintf(2, '%s\n', tbx_colorize(sprintf('Warning: %s', msg), '33'));
+end
+
+function tbx_printSuccess(fmt, varargin)
+%TBX_PRINTSUCCESS  Print a success/done message in bold green.
+    if tbx_quietMode(), return; end
+    msg = sprintf(fmt, varargin{:});
+    fprintf('%s\n', tbx_colorize(msg, '1;32'));
 end
 
 function str = tbx_formatBytes(bytes)
@@ -2483,6 +3358,12 @@ function tbx_migrateOld()
     selfDir = fileparts(selfPath);
     oldToolboxDir = fullfile(selfDir, "toolboxes");
     if ~isfolder(oldToolboxDir)
+        return;
+    end
+    % Skip if toolboxes dir is empty (no packages to migrate)
+    contents = dir(oldToolboxDir);
+    contents = contents(~ismember({contents.name}, {'.', '..'}));
+    if isempty(contents)
         return;
     end
 

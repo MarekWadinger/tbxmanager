@@ -20,14 +20,14 @@ classdef TestSetupAndConfig < matlab.unittest.TestCase
     methods (Test)
 
         function testSetupCreatesDirectories(testCase)
-            tbxmanager("help");
+            evalc('tbxmanager("help")');
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "packages")));
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "cache")));
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "state")));
         end
 
         function testSetupCreatesSourcesJson(testCase)
-            tbxmanager("help");
+            evalc('tbxmanager("help")');
             f = fullfile(testCase.TempDir, "state", "sources.json");
             testCase.verifyTrue(isfile(f));
             data = jsondecode(fileread(f));
@@ -35,7 +35,7 @@ classdef TestSetupAndConfig < matlab.unittest.TestCase
         end
 
         function testSetupCreatesEnabledJson(testCase)
-            tbxmanager("help");
+            evalc('tbxmanager("help")');
             f = fullfile(testCase.TempDir, "state", "enabled.json");
             testCase.verifyTrue(isfile(f));
             data = jsondecode(fileread(f));
@@ -43,29 +43,48 @@ classdef TestSetupAndConfig < matlab.unittest.TestCase
         end
 
         function testBaseDirRespectsEnvVar(testCase)
-            result = tbxmanager("internal__", "baseDir");
+            evalc('result = tbxmanager("internal__", "baseDir")');
             testCase.verifyEqual(string(result), string(testCase.TempDir));
         end
 
         function testPlatformArchReturnsValid(testCase)
-            result = tbxmanager("internal__", "platformArch");
+            evalc('result = tbxmanager("internal__", "platformArch")');
             valid = ["win64", "maci64", "maca64", "glnxa64"];
             testCase.verifyTrue(ismember(string(result), valid));
         end
 
         function testPlatformArchIsCached(testCase)
-            r1 = tbxmanager("internal__", "platformArch");
-            r2 = tbxmanager("internal__", "platformArch");
+            evalc('r1 = tbxmanager("internal__", "platformArch")');
+            evalc('r2 = tbxmanager("internal__", "platformArch")');
             testCase.verifyEqual(string(r1), string(r2), ...
                 'Consecutive calls should return identical cached result');
         end
 
         function testConfigCreated(testCase)
-            tbxmanager("help");
-            % Config is only created when tbx_config() is called explicitly
-            % by a command that needs it. Help triggers setup but not config.
-            % Verify setup ran successfully instead.
+            evalc('tbxmanager("help")');
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "state")));
+        end
+
+        function testSetupMigratesOldSourceUrl(testCase)
+            % Pre-create sources.json with old kvasnica URL
+            stateDir = fullfile(testCase.TempDir, "state");
+            mkdir(stateDir);
+            fid = fopen(fullfile(stateDir, "sources.json"), 'w');
+            fprintf(fid, '{"sources":["https://kvasnica.github.io/tbxmanager-registry/index.json"]}');
+            fclose(fid);
+
+            evalc('tbxmanager("help")');
+
+            data = jsondecode(fileread(fullfile(stateDir, "sources.json")));
+            if iscell(data.sources)
+                url = string(data.sources{1});
+            else
+                url = string(data.sources);
+            end
+            testCase.verifyTrue(contains(url, "marekwadinger.github.io"), ...
+                'Old kvasnica URL should be migrated to marekwadinger');
+            testCase.verifyFalse(contains(url, "kvasnica.github.io"), ...
+                'Old kvasnica URL should no longer be present');
         end
 
     end
