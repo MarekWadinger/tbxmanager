@@ -33,6 +33,14 @@ function varargout = tbxmanager(command, varargin)
     command = string(command);
     args = string(varargin);
 
+    % Extract global flags (--yes/-y, --quiet/-q) before command dispatch
+    yesMode  = any(args == "--yes"   | args == "-y");
+    quietMode = any(args == "--quiet" | args == "-q");
+    args = args(args ~= "--yes" & args ~= "-y" & args ~= "--quiet" & args ~= "-q");
+    tbx_yesMode(yesMode);
+    tbx_quietMode(quietMode);
+    cleanupFlags = onCleanup(@() tbx_resetFlags()); %#ok<NASGU>
+
     tbx_setup();
 
     command = tbx_resolveCommand(command);
@@ -75,6 +83,10 @@ function varargout = tbxmanager(command, varargin)
             main_add(args);
         case "remove"
             main_remove(args);
+        case "check"
+            main_check(args);
+        case "tree"
+            main_tree(args);
         case "help"
             main_help(args);
         case "internal__"
@@ -190,7 +202,7 @@ function cmd = tbx_resolveCommand(cmd)
     knownCommands = ["install","uninstall","update","list","search","info", ...
                      "lock","sync","init","selfupdate","source","enable", ...
                      "disable","restorepath","require","cache","publish","help", ...
-                     "add","remove"];
+                     "add","remove","check","tree"];
 
     % Exact match — return immediately
     if any(knownCommands == cmd)
@@ -230,6 +242,56 @@ function cmd = tbx_resolveCommand(cmd)
     end
     tbx_printf("\nRun 'tbxmanager help <command>' for detailed usage.\n");
     cmd = "";
+end
+
+function val = tbx_yesMode(newVal)
+%TBX_YESMODE  Get/set yes-mode flag (skips confirmation prompts).
+    persistent mode;
+    if isempty(mode), mode = false; end
+    if nargin > 0, mode = logical(newVal); end
+    val = mode;
+end
+
+function val = tbx_quietMode(newVal)
+%TBX_QUIETMODE  Get/set quiet-mode flag (suppresses tbx_printf output).
+    persistent mode;
+    if isempty(mode), mode = false; end
+    if nargin > 0, mode = logical(newVal); end
+    val = mode;
+end
+
+function tbx_resetFlags()
+%TBX_RESETFLAGS  Reset yes/quiet modes to false (called via onCleanup).
+    tbx_yesMode(false);
+    tbx_quietMode(false);
+end
+
+function tf = tbx_supportsColor()
+%TBX_SUPPORTSCOLOR  Return true if the current output supports ANSI color codes.
+%   True in terminals; false in MATLAB desktop (Command Window ignores ANSI).
+    persistent cache;
+    if ~isempty(cache), tf = cache; return; end
+    if usejava('desktop')
+        % MATLAB Command Window does not render ANSI escape sequences
+        cache = false;
+    else
+        noColor   = string(getenv('NO_COLOR'));
+        term      = string(getenv('TERM'));
+        colorterm = string(getenv('COLORTERM'));
+        cache = strlength(noColor) == 0 && ...
+                ((strlength(term) > 0 && term ~= "dumb") || strlength(colorterm) > 0);
+    end
+    tf = cache;
+end
+
+function s = tbx_colorize(text, ansiCode)
+%TBX_COLORIZE  Wrap text in ANSI color code if color is supported.
+%   ansiCode examples: "31"=red, "32"=green, "33"=yellow, "1;32"=bold green, "2"=dim
+    if tbx_supportsColor()
+        s = sprintf('\033[%sm%s\033[0m', ansiCode, char(text));
+    else
+        s = char(text);
+    end
 end
 
 function d = tbx_baseDir()
@@ -1311,7 +1373,8 @@ function main_install(args)
     for i = 1:numel(plan)
         [isInst, instVer] = tbx_isInstalled(plan(i).name);
         if isInst && instVer == plan(i).version
-            tbx_printf("  %s@%s already installed.\n", plan(i).name, plan(i).version);
+            tbx_printf("  %s\n", tbx_colorize(sprintf("✓ %s@%s already installed", ...
+                plan(i).name, plan(i).version), "2"));
         else
             toInstall(end+1) = plan(i); %#ok<AGROW>
         end
@@ -1325,13 +1388,14 @@ function main_install(args)
     % Show plan
     tbx_printf("\nInstallation plan:\n");
     for i = 1:numel(toInstall)
-        tbx_printf("  %s@%s (%s)\n", toInstall(i).name, toInstall(i).version, toInstall(i).platform);
+        tbx_printf("  %s\n", tbx_colorize(sprintf("+ %s@%s (%s)", ...
+            toInstall(i).name, toInstall(i).version, toInstall(i).platform), "32"));
     end
     tbx_printf("\n");
 
     % Confirm (skip in non-interactive/batch mode)
     cfg = tbx_config();
-    if isfield(cfg, "confirm_install") && cfg.confirm_install && usejava('desktop')
+    if isfield(cfg, "confirm_install") && cfg.confirm_install && ~tbx_yesMode() && usejava('desktop')
         reply = input("Proceed? [Y/n]: ", "s");
         if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
             tbx_printf("Installation cancelled.\n");
@@ -1339,6 +1403,7 @@ function main_install(args)
         end
     end
 
+    t0 = tic;
     % Execute installation
     cacheDir = fullfile(tbx_baseDir(), "cache");
     for i = 1:numel(toInstall)
@@ -1347,7 +1412,7 @@ function main_install(args)
         tbx_installSinglePackage(pkg, cacheDir);
     end
 
-    tbx_printf("\nDone. %d package(s) installed.\n", numel(toInstall));
+    tbx_printSuccess("\nDone in %.1fs. %d package(s) installed.", toc(t0), numel(toInstall));
     if isfile(fullfile(pwd, "tbxmanager.json"))
         pkgList = strjoin(args, " ");
         tbx_printf("Tip: In a project? Use 'tbxmanager add %s' to also record this in tbxmanager.json.\n", pkgList);
@@ -1510,10 +1575,12 @@ function main_add(args)
         tbx_printf("  + %s (%s) added to tbxmanager.json\n", pkgName, constraint);
     end
     tbx_writeJson(projectFile, project);
+    t0 = tic;
     tbx_printf("\nUpdating lock file...\n");
     main_lock(string.empty);
     tbx_printf("\nSyncing project...\n");
     main_sync(string.empty);
+    tbx_printf("Done in %.1fs.\n", toc(t0));
 end
 
 %% ========================================================================
@@ -1547,10 +1614,12 @@ function main_remove(args)
         end
     end
     tbx_writeJson(projectFile, project);
+    t0 = tic;
     tbx_printf("\nUpdating lock file...\n");
     main_lock(string.empty);
     tbx_printf("\nSyncing project...\n");
     main_sync(string.empty);
+    tbx_printf("Done in %.1fs.\n", toc(t0));
 end
 
 %% ========================================================================
@@ -1583,13 +1652,13 @@ function main_uninstall(args)
         revDeps = setdiff(revDeps, args);
         if ~isempty(revDeps)
             tbx_printWarning("Package '%s' is required by: %s", pkgName, strjoin(revDeps, ", "));
-            if usejava('desktop')
+            if ~tbx_yesMode() && usejava('desktop')
                 reply = input(sprintf("  Remove '%s' anyway? [y/N]: ", pkgName), "s");
                 if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
                     tbx_printf("  Skipping %s.\n", pkgName);
                     continue;
                 end
-            else
+            elseif ~tbx_yesMode()
                 tbx_printf("  Skipping %s (non-interactive mode).\n", pkgName);
                 continue;
             end
@@ -1714,7 +1783,8 @@ function main_update(args)
     for i = 1:numel(plan)
         [isInst, oldVer] = tbx_isInstalled(plan(i).name);
         if isInst && oldVer ~= plan(i).version
-            tbx_printf("  %s: %s -> %s\n", plan(i).name, oldVer, plan(i).version);
+            tbx_printf("  %s\n", tbx_colorize(sprintf("~ %s: %s -> %s", ...
+                plan(i).name, oldVer, plan(i).version), "33"));
         elseif ~isInst
             tbx_printf("  %s: (new) %s\n", plan(i).name, plan(i).version);
         else
@@ -1723,7 +1793,7 @@ function main_update(args)
     end
     tbx_printf("\n");
 
-    if usejava('desktop')
+    if ~tbx_yesMode() && usejava('desktop')
         reply = input("Proceed? [Y/n]: ", "s");
         if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
             tbx_printf("Update cancelled.\n");
@@ -1731,6 +1801,7 @@ function main_update(args)
         end
     end
 
+    t0 = tic;
     % Execute updates
     cacheDir = fullfile(tbx_baseDir(), "cache");
     updated = 0;
@@ -1745,7 +1816,7 @@ function main_update(args)
         updated = updated + 1;
     end
 
-    tbx_printf("\nDone. %d package(s) updated.\n", updated);
+    tbx_printSuccess("\nDone in %.1fs. %d package(s) updated.", toc(t0), updated);
 end
 
 %% ========================================================================
@@ -2057,7 +2128,7 @@ function main_sync(~)
     end
 
     tbx_printf("\n");
-    if usejava('desktop')
+    if ~tbx_yesMode() && usejava('desktop')
         reply = input("Proceed? [Y/n]: ", "s");
         if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
             tbx_printf("Sync cancelled.\n");
@@ -2065,6 +2136,7 @@ function main_sync(~)
         end
     end
 
+    t0 = tic;
     % Remove extra packages
     for i = 1:numel(toRemove)
         pkgNameStr = string(toRemove{i});
@@ -2114,7 +2186,7 @@ function main_sync(~)
         tbx_installSinglePackage(pkg, cacheDir);
     end
 
-    tbx_printf("\nSync complete.\n");
+    tbx_printSuccess("\nSync complete in %.1fs.", toc(t0));
 end
 
 %% ========================================================================
@@ -2126,13 +2198,14 @@ function main_init(~)
     projectFile = fullfile(pwd, "tbxmanager.json");
     if isfile(projectFile)
         tbx_printWarning("tbxmanager.json already exists in current directory.");
-        if ~usejava('desktop')
+        if ~tbx_yesMode() && ~usejava('desktop')
             return;
-        end
-        reply = input("Overwrite? [y/N]: ", "s");
-        if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
-            tbx_printf("Cancelled.\n");
-            return;
+        elseif ~tbx_yesMode()
+            reply = input("Overwrite? [y/N]: ", "s");
+            if ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
+                tbx_printf("Cancelled.\n");
+                return;
+            end
         end
     end
 
@@ -2649,6 +2722,161 @@ function tbx_buildArchive(archivePath, excludePatterns)
     zip(archivePath, keep, baseDir);
 end
 
+%% ========================================================================
+%  Command: check
+%  ========================================================================
+
+function main_check(~)
+%MAIN_CHECK  Verify installed packages match the lock file in CWD.
+    lockFile = fullfile(pwd, "tbxmanager.lock");
+    if ~isfile(lockFile)
+        tbx_printError("No tbxmanager.lock in current directory. Run 'tbxmanager lock' first.");
+        return;
+    end
+
+    lockData = tbx_readLock(lockFile);
+    if ~isfield(lockData, "packages")
+        tbx_printf("No packages in lock file.\n");
+        return;
+    end
+
+    installed = tbx_listInstalled();
+    installedMap = containers.Map("KeyType", "char", "ValueType", "char");
+    for i = 1:numel(installed)
+        installedMap(char(installed(i).name)) = char(installed(i).version);
+    end
+
+    lockNames = fieldnames(lockData.packages);
+    allOk = true;
+
+    % Check every package in lock
+    for i = 1:numel(lockNames)
+        name    = lockNames{i};
+        reqVer  = string(lockData.packages.(name).version);
+        if installedMap.isKey(name)
+            instVer = string(installedMap(name));
+            if instVer == reqVer
+                tbx_printf("  %s %s@%s\n", tbx_colorize("✓", "32"), name, instVer);
+            else
+                tbx_printf("  %s %s@%s (lock requires %s)\n", ...
+                    tbx_colorize("✗", "31"), name, instVer, reqVer);
+                allOk = false;
+            end
+        else
+            tbx_printf("  %s %s not installed (lock requires %s)\n", ...
+                tbx_colorize("!", "33"), name, reqVer);
+            allOk = false;
+        end
+    end
+
+    % Check for installed packages not in lock
+    lockSet = string(lockNames);
+    for i = 1:numel(installed)
+        name = char(installed(i).name);
+        if ~any(lockSet == string(name))
+            tbx_printf("  %s %s@%s not in lock file\n", ...
+                tbx_colorize("!", "33"), name, installed(i).version);
+            allOk = false;
+        end
+    end
+
+    tbx_printf("\n");
+    if allOk
+        tbx_printSuccess("All packages match lock file.");
+    else
+        tbx_printf("Run 'tbxmanager sync' to bring environment in sync with lock.\n");
+    end
+end
+
+%% ========================================================================
+%  Command: tree
+%  ========================================================================
+
+function main_tree(~)
+%MAIN_TREE  Show installed packages as a dependency tree.
+    installed = tbx_listInstalled();
+    if isempty(installed)
+        tbx_printf("No packages installed.\n");
+        return;
+    end
+
+    % Build name -> pkg map
+    pkgMap = containers.Map("KeyType", "char", "ValueType", "any");
+    for i = 1:numel(installed)
+        pkgMap(char(installed(i).name)) = installed(i);
+    end
+
+    % Find packages that are depended on by others
+    depSet = containers.Map("KeyType", "char", "ValueType", "logical");
+    for i = 1:numel(installed)
+        meta = installed(i).meta;
+        if isfield(meta, "dependencies") && isstruct(meta.dependencies)
+            dNames = fieldnames(meta.dependencies);
+            for j = 1:numel(dNames)
+                depSet(dNames{j}) = true;
+            end
+        end
+    end
+
+    % Root packages = installed but not a dependency of anything else
+    roots = {};
+    for i = 1:numel(installed)
+        if ~depSet.isKey(char(installed(i).name))
+            roots{end+1} = char(installed(i).name); %#ok<AGROW>
+        end
+    end
+    if isempty(roots)
+        % All packages are transitive deps (possible circular) — show all as roots
+        for i = 1:numel(installed)
+            roots{end+1} = char(installed(i).name); %#ok<AGROW>
+        end
+    end
+
+    visited = containers.Map("KeyType", "char", "ValueType", "logical");
+    for i = 1:numel(roots)
+        name = string(roots{i});
+        if pkgMap.isKey(char(name))
+            pkg = pkgMap(char(name));
+            tbx_printf("%s@%s\n", tbx_colorize(pkg.name, "1"), pkg.version);
+            visited(char(name)) = true;
+            tbx_treeChildren(name, pkgMap, visited, "");
+        end
+    end
+end
+
+function tbx_treeChildren(pkgName, pkgMap, visited, prefix)
+%TBX_TREECHILDREN  Recursively print child dependencies.
+    if ~pkgMap.isKey(char(pkgName)), return; end
+    pkg = pkgMap(char(pkgName));
+    deps = {};
+    if isfield(pkg.meta, "dependencies") && isstruct(pkg.meta.dependencies)
+        deps = fieldnames(pkg.meta.dependencies);
+    end
+    for i = 1:numel(deps)
+        depName = string(deps{i});
+        isLast = (i == numel(deps));
+        if isLast
+            connector    = "└── ";
+            childPrefix  = prefix + "    ";
+        else
+            connector    = "├── ";
+            childPrefix  = prefix + "│   ";
+        end
+        if pkgMap.isKey(char(depName))
+            depPkg = pkgMap(char(depName));
+            tbx_printf("%s%s%s@%s\n", prefix, connector, ...
+                tbx_colorize(depPkg.name, "1"), depPkg.version);
+            if ~visited.isKey(char(depName))
+                visited(char(depName)) = true;
+                tbx_treeChildren(depName, pkgMap, visited, childPrefix);
+            end
+        else
+            tbx_printf("%s%s%s\n", prefix, connector, ...
+                tbx_colorize(depName + " (not installed)", "2"));
+        end
+    end
+end
+
 function main_help(args)
 %MAIN_HELP  Display help text.
     if ~isempty(args)
@@ -2793,6 +3021,24 @@ function main_help(args)
             tbx_printf("Requires a GitHub token with 'public_repo' scope.\n");
             tbx_printf("The token is prompted on first use and saved to config.\n");
 
+        case "check"
+            tbx_printf("tbxmanager check - Verify lock file consistency\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager check\n\n");
+            tbx_printf("Compares installed packages against tbxmanager.lock in the current\n");
+            tbx_printf("directory. Reports mismatches without making any changes.\n\n");
+            tbx_printf("  ✓  package matches lock\n");
+            tbx_printf("  ✗  version mismatch\n");
+            tbx_printf("  !  missing or extra package\n\n");
+            tbx_printf("Run 'tbxmanager sync' to fix any discrepancies.\n");
+
+        case "tree"
+            tbx_printf("tbxmanager tree - Show dependency tree\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager tree\n\n");
+            tbx_printf("Display installed packages as a tree showing their dependencies.\n");
+            tbx_printf("Root packages (not a dependency of anything else) are shown at the top.\n");
+
         otherwise
             desc = tbx_commandDescriptions();
             tbx_printf("tbxmanager v2.0 - MATLAB Package Manager\n\n");
@@ -2804,12 +3050,14 @@ function main_help(args)
             tbx_printf("  %-14s%s\n", "list",      desc.list);
             tbx_printf("  %-14s%s\n", "search",    desc.search);
             tbx_printf("  %-14s%s\n", "info",      desc.info);
+            tbx_printf("  %-14s%s\n", "tree",      desc.tree);
             tbx_printf("\nProject commands  (require tbxmanager.json in CWD):\n");
             tbx_printf("  %-14s%s\n", "add",     desc.add);
             tbx_printf("  %-14s%s\n", "remove",  desc.remove);
             tbx_printf("  %-14s%s\n", "init",    desc.init);
             tbx_printf("  %-14s%s\n", "lock",    desc.lock);
             tbx_printf("  %-14s%s\n", "sync",    desc.sync);
+            tbx_printf("  %-14s%s\n", "check",   desc.check);
             tbx_printf("  %-14s%s\n", "publish", desc.publish);
             tbx_printf("\nPath commands:\n");
             tbx_printf("  %-14s%s\n", "enable",      desc.enable);
@@ -2854,6 +3102,8 @@ function desc = tbx_commandDescriptions()
     desc.help        = "Show this help or help for a command";
     desc.add         = "Add packages to project (edits tbxmanager.json + sync)";
     desc.remove      = "Remove packages from project (edits tbxmanager.json + sync)";
+    desc.check       = "Verify installed packages match the lock file";
+    desc.tree        = "Show installed packages as a dependency tree";
 end
 
 function result = main_internal(args)
@@ -2934,7 +3184,8 @@ end
 %  ========================================================================
 
 function tbx_printf(fmt, varargin)
-%TBX_PRINTF  Print formatted message to console.
+%TBX_PRINTF  Print formatted message to console (suppressed in quiet mode).
+    if tbx_quietMode(), return; end
     fprintf(fmt, varargin{:});
 end
 
@@ -2978,15 +3229,22 @@ function tbx_printTable(headers, columns)
 end
 
 function tbx_printError(fmt, varargin)
-%TBX_PRINTERROR  Print error message to stderr.
+%TBX_PRINTERROR  Print an error message in red to stderr.
     msg = sprintf(fmt, varargin{:});
-    fprintf(2, "Error: %s\n", msg);
+    fprintf(2, '%s\n', tbx_colorize(sprintf('Error: %s', msg), '31'));
 end
 
 function tbx_printWarning(fmt, varargin)
-%TBX_PRINTWARNING  Print warning message to stderr.
+%TBX_PRINTWARNING  Print a warning message in yellow to stderr.
     msg = sprintf(fmt, varargin{:});
-    fprintf(2, "Warning: %s\n", msg);
+    fprintf(2, '%s\n', tbx_colorize(sprintf('Warning: %s', msg), '33'));
+end
+
+function tbx_printSuccess(fmt, varargin)
+%TBX_PRINTSUCCESS  Print a success/done message in bold green.
+    if tbx_quietMode(), return; end
+    msg = sprintf(fmt, varargin{:});
+    fprintf('%s\n', tbx_colorize(msg, '1;32'));
 end
 
 function str = tbx_formatBytes(bytes)

@@ -504,5 +504,49 @@ classdef TestLockSync < matlab.unittest.TestCase
                 'install should not show add tip when no tbxmanager.json present');
         end
 
+        % --- check: match / mismatch ---
+
+        function testCheckMatchesLock(testCase)
+            cd(testCase.ProjectDir);
+            evalc('tbxmanager("lock")');
+            evalc('tbxmanager("sync")');
+            out = evalc('tbxmanager("check")');
+            % tbx_printSuccess prints "All packages match lock file."
+            testCase.verifyTrue(contains(out, 'match') || contains(out, char(10003)), ...
+                'check should report all packages match after lock+sync');
+        end
+
+        function testCheckDetectsMismatch(testCase)
+            cd(testCase.ProjectDir);
+            evalc('tbxmanager("lock")');
+            evalc('tbxmanager("sync")');
+            % Corrupt the lock to require a non-installed version
+            lockFile = fullfile(testCase.ProjectDir, "tbxmanager.lock");
+            lockData = jsondecode(fileread(lockFile));
+            lockData.packages.testpkg2.version = '9.9.9';
+            fid = fopen(lockFile, 'w');
+            fprintf(fid, '%s', jsonencode(lockData));
+            fclose(fid);
+            out = evalc('tbxmanager("check")');
+            testCase.verifyTrue(contains(out, '9.9.9') || contains(out, 'requires') || contains(out, char(10007)), ...
+                'check should report version mismatch');
+        end
+
+        % --- tree: installed packages ---
+
+        function testTreeShowsInstalled(testCase)
+            evalc('tbxmanager("install", "testpkg2")');  % also installs testpkg1 as dep
+            out = evalc('tbxmanager("tree")');
+            testCase.verifyTrue(contains(out, 'testpkg2'), ...
+                'tree should show installed root package');
+        end
+
+        function testTreeShowsDeps(testCase)
+            evalc('tbxmanager("install", "testpkg2")');
+            out = evalc('tbxmanager("tree")');
+            testCase.verifyTrue(contains(out, 'testpkg1'), ...
+                'tree should show dependency testpkg1 under testpkg2');
+        end
+
     end
 end

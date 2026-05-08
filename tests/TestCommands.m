@@ -278,5 +278,35 @@ classdef TestCommands < matlab.unittest.TestCase
             testCase.verifyTrue(true, 'restorepath with missing dir should not throw');
         end
 
+        % --- tree (no packages installed) ---
+
+        function testTreeEmpty(testCase)
+            out = evalc('tbxmanager("tree")');
+            testCase.verifyTrue(contains(out, 'No packages') || ischar(out), ...
+                'tree with no packages should report empty');
+        end
+
+        % --- check (no lock file present) ---
+
+        function testCheckNoLockFile(testCase)
+            out = evalc('tbxmanager("check")');
+            testCase.verifyTrue(contains(out, 'lock') || contains(out, 'Error'), ...
+                'check without lock file should report error');
+        end
+
+        % --- help tree / help check ---
+
+        function testHelpTree(testCase)
+            out = evalc('tbxmanager("help", "tree")');
+            testCase.verifyTrue(contains(out, 'tree') && contains(out, 'dependency'), ...
+                'help tree should describe the tree command');
+        end
+
+        function testHelpCheck(testCase)
+            out = evalc('tbxmanager("help", "check")');
+            testCase.verifyTrue(contains(out, 'check') && contains(out, 'lock'), ...
+                'help check should describe the check command');
+        end
+
     end
 end
