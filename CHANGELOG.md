@@ -1,3 +1,17 @@
+## v2.4.0 (2026-05-08)
+
+### Feat
+
+- **client**: project isolation, UX polish, and version resolution fixes
+- **client**: color help output and fix startup performance
+- **client**: add color, timing, --yes/--quiet flags, tree and check commands
+- **client**: add project-scoped add/remove commands with contextual hints
+- **client**: add unique-prefix shorthand commands and tbx alias
+
+### Fix
+
+- **client**: auto-migrate stale kvasnica.github.io registry URL
+
 ## v2.3.0 (2026-03-31)
 
 ### Feat
