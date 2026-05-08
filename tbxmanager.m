@@ -109,7 +109,13 @@ end
 
 function tbx_setup()
 %TBX_SETUP  Create ~/.tbxmanager/ directory structure on first run.
+%   Uses a persistent guard so the expensive checks only run once per
+%   MATLAB session (or once per unique TBXMANAGER_HOME in tests).
+    persistent lastBaseDir tbxAliasChecked;
     baseDir = tbx_baseDir();
+    if isequal(lastBaseDir, char(baseDir))
+        return;
+    end
     dirs = {fullfile(baseDir, "packages"), ...
             fullfile(baseDir, "cache"), ...
             fullfile(baseDir, "state"), ...
@@ -167,28 +173,33 @@ function tbx_setup()
     % Detect old-style installation and offer migration
     tbx_migrateOld();
 
-    % Auto-create tbx.m alias next to tbxmanager.m if not already present
-    try
-        selfDir = fileparts(mfilename('fullpath'));
-        if ~isempty(selfDir)
-            tbxAliasFile = fullfile(selfDir, "tbx.m");
-            if ~isfile(tbxAliasFile)
-                tbxContent = sprintf('%s\n%s\n%s\n%s\n%s\n', ...
-                    'function varargout = tbx(varargin)', ...
-                    '%TBX  Shorthand alias for tbxmanager.', ...
-                    '%   tbx install pkg  is equivalent to  tbxmanager install pkg', ...
-                    '    [varargout{1:nargout}] = tbxmanager(varargin{:});', ...
-                    'end');
-                fid = fopen(char(tbxAliasFile), 'w');
-                if fid ~= -1
-                    fprintf(fid, '%s', tbxContent);
-                    fclose(fid);
+    % Auto-create tbx.m alias next to tbxmanager.m (once per session)
+    if isempty(tbxAliasChecked)
+        try
+            selfDir = fileparts(mfilename('fullpath'));
+            if ~isempty(selfDir)
+                tbxAliasFile = fullfile(selfDir, "tbx.m");
+                if ~isfile(tbxAliasFile)
+                    tbxContent = sprintf('%s\n%s\n%s\n%s\n%s\n', ...
+                        'function varargout = tbx(varargin)', ...
+                        '%TBX  Shorthand alias for tbxmanager.', ...
+                        '%   tbx install pkg  is equivalent to  tbxmanager install pkg', ...
+                        '    [varargout{1:nargout}] = tbxmanager(varargin{:});', ...
+                        'end');
+                    fid = fopen(char(tbxAliasFile), 'w');
+                    if fid ~= -1
+                        fprintf(fid, '%s', tbxContent);
+                        fclose(fid);
+                    end
                 end
             end
+        catch
+            % Silently skip if directory is read-only or mfilename unavailable
         end
-    catch
-        % Silently skip if directory is read-only or mfilename unavailable
+        tbxAliasChecked = true;
     end
+
+    lastBaseDir = char(baseDir);
 end
 
 function cmd = tbx_resolveCommand(cmd)
@@ -266,20 +277,37 @@ function tbx_resetFlags()
     tbx_quietMode(false);
 end
 
+function tbx_clearColorCache()
+%TBX_CLEARCOLORCACHE  Clear the tbx_supportsColor persistent cache.
+%   Call this after changing TBXMANAGER_COLOR or NO_COLOR env vars.
+    clear tbx_supportsColor;
+end
+
 function tf = tbx_supportsColor()
 %TBX_SUPPORTSCOLOR  Return true if the current output supports ANSI color codes.
-%   True in terminals; false in MATLAB desktop (Command Window ignores ANSI).
+%   Auto-detected from environment. Override with:
+%     setenv('TBXMANAGER_COLOR','1')  % force on
+%     setenv('TBXMANAGER_COLOR','0')  % force off
+%     setenv('NO_COLOR','1')          % disable (https://no-color.org)
     persistent cache;
     if ~isempty(cache), tf = cache; return; end
+    forceColor = string(getenv('TBXMANAGER_COLOR'));
+    if forceColor == "1"
+        cache = true; tf = true; return;
+    elseif forceColor == "0"
+        cache = false; tf = false; return;
+    end
+    noColor = string(getenv('NO_COLOR'));
+    if strlength(noColor) > 0
+        cache = false; tf = false; return;
+    end
     if usejava('desktop')
         % MATLAB Command Window does not render ANSI escape sequences
         cache = false;
     else
-        noColor   = string(getenv('NO_COLOR'));
         term      = string(getenv('TERM'));
         colorterm = string(getenv('COLORTERM'));
-        cache = strlength(noColor) == 0 && ...
-                ((strlength(term) > 0 && term ~= "dumb") || strlength(colorterm) > 0);
+        cache = (strlength(term) > 0 && term ~= "dumb") || strlength(colorterm) > 0;
     end
     tf = cache;
 end
@@ -3041,42 +3069,42 @@ function main_help(args)
 
         otherwise
             desc = tbx_commandDescriptions();
-            tbx_printf("tbxmanager v2.0 - MATLAB Package Manager\n\n");
+            tbx_printf("%s\n\n", tbx_colorize("tbxmanager v2.0 - MATLAB Package Manager", "1"));
             tbx_printf("Usage: tbxmanager <command> [arguments]  (alias: tbx)\n\n");
-            tbx_printf("Global commands  (affect ~/.tbxmanager):\n");
-            tbx_printf("  %-14s%s\n", "install",   desc.install);
-            tbx_printf("  %-14s%s\n", "uninstall", desc.uninstall);
-            tbx_printf("  %-14s%s\n", "update",    desc.update);
-            tbx_printf("  %-14s%s\n", "list",      desc.list);
-            tbx_printf("  %-14s%s\n", "search",    desc.search);
-            tbx_printf("  %-14s%s\n", "info",      desc.info);
-            tbx_printf("  %-14s%s\n", "tree",      desc.tree);
-            tbx_printf("\nProject commands  (require tbxmanager.json in CWD):\n");
-            tbx_printf("  %-14s%s\n", "add",     desc.add);
-            tbx_printf("  %-14s%s\n", "remove",  desc.remove);
-            tbx_printf("  %-14s%s\n", "init",    desc.init);
-            tbx_printf("  %-14s%s\n", "lock",    desc.lock);
-            tbx_printf("  %-14s%s\n", "sync",    desc.sync);
-            tbx_printf("  %-14s%s\n", "check",   desc.check);
-            tbx_printf("  %-14s%s\n", "publish", desc.publish);
-            tbx_printf("\nPath commands:\n");
-            tbx_printf("  %-14s%s\n", "enable",      desc.enable);
-            tbx_printf("  %-14s%s\n", "disable",     desc.disable);
-            tbx_printf("  %-14s%s\n", "restorepath", desc.restorepath);
-            tbx_printf("  %-14s%s\n", "require",     desc.require);
-            tbx_printf("\nMaintenance:\n");
-            tbx_printf("  %-14s%s\n", "selfupdate", desc.selfupdate);
-            tbx_printf("  %-14s%s\n", "source",     desc.source);
-            tbx_printf("  %-14s%s\n", "cache",      desc.cache);
-            tbx_printf("  %-14s%s\n", "help",       desc.help);
-            tbx_printf("\nExamples:\n");
+            tbx_printf("%s\n", tbx_colorize("Global commands  (affect ~/.tbxmanager):", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","install"),   "1"), desc.install);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","uninstall"), "1"), desc.uninstall);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","update"),    "1"), desc.update);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","list"),      "1"), desc.list);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","search"),    "1"), desc.search);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","info"),      "1"), desc.info);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","tree"),      "1"), desc.tree);
+            tbx_printf("\n%s\n", tbx_colorize("Project commands  (require tbxmanager.json in CWD):", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","add"),     "1"), desc.add);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","remove"),  "1"), desc.remove);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","init"),    "1"), desc.init);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","lock"),    "1"), desc.lock);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","sync"),    "1"), desc.sync);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","check"),   "1"), desc.check);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","publish"), "1"), desc.publish);
+            tbx_printf("\n%s\n", tbx_colorize("Path commands:", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","enable"),      "1"), desc.enable);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","disable"),     "1"), desc.disable);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","restorepath"), "1"), desc.restorepath);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","require"),     "1"), desc.require);
+            tbx_printf("\n%s\n", tbx_colorize("Maintenance:", "33"));
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","selfupdate"), "1"), desc.selfupdate);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","source"),     "1"), desc.source);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","cache"),      "1"), desc.cache);
+            tbx_printf("  %s  %s\n", tbx_colorize(sprintf("%-12s","help"),       "1"), desc.help);
+            tbx_printf("\n%s\n", tbx_colorize("Examples:", "33"));
             tbx_printf("  tbxmanager install mpt          %% global, no project needed\n");
             tbx_printf("  tbxmanager add mpt@>=3.0        %% project: edits tbxmanager.json\n");
             tbx_printf("  tbxmanager update\n");
             tbx_printf("  tbxmanager search parametric\n");
             tbx_printf("  tbxmanager help install\n");
             tbx_printf("\nCommands can be abbreviated to their unique prefix (e.g., 'inst' for 'install').\n");
-            tbx_printf("Storage: %s\n", tbx_baseDir());
+            tbx_printf("Storage: %s\n", tbx_colorize(tbx_baseDir(), "2"));
     end
 end
 
