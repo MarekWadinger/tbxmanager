@@ -205,7 +205,7 @@ classdef TestLockSync < matlab.unittest.TestCase
         end
 
         function testLockGenerationFailure(testCase)
-            % Project file without "dependencies" field → lock generation fails
+            % Project with unsatisfiable constraint → lock rethrows, caller sees error
             noDepDir = fullfile(testCase.TempDir, "project_nodeps");
             mkdir(noDepDir);
             nodepData = struct('name', 'nodeps', 'version', '0.1.0');
@@ -213,9 +213,14 @@ classdef TestLockSync < matlab.unittest.TestCase
             fprintf(fid, '%s', jsonencode(nodepData));
             fclose(fid);
             cd(noDepDir);
-            out = evalc('tbxmanager("lock")');
-            testCase.verifyTrue(contains(out, "failed") || contains(out, "No") || contains(out, "depend"), ...
-                'Should report lock generation failure');
+            threw = false;
+            try
+                evalc('tbxmanager("lock")');
+            catch
+                threw = true;
+            end
+            % Either threw OR printed a failure message (both are acceptable)
+            testCase.verifyTrue(threw, 'lock should throw on generation failure');
         end
 
         % --- sync errors ---
@@ -274,13 +279,13 @@ classdef TestLockSync < matlab.unittest.TestCase
                 'List should show testpkg1 after lock+sync');
         end
 
-        function testSyncRemovesExtraPackage(testCase)
+        function testSyncDisablesNonProjectPackages(testCase)
             % Install both testpkg1 and testpkg2, then sync with a lock that
-            % only contains testpkg1. testpkg2 should be removed.
+            % only contains testpkg1. testpkg2 must stay on disk but be
+            % disabled (removed from path) since it is not in the project lock.
             evalc('tbxmanager("install", "testpkg1")');
             evalc('tbxmanager("install", "testpkg2")');
 
-            % Create a project directory with only testpkg1 as dependency
             simpleDir = fullfile(testCase.TempDir, "simple_project");
             mkdir(simpleDir);
             projData = struct('name', 'simple', 'version', '0.1.0', ...
@@ -290,11 +295,16 @@ classdef TestLockSync < matlab.unittest.TestCase
             fclose(fid);
 
             cd(simpleDir);
-            evalc('tbxmanager("lock")');  % locks testpkg1@1.0.0 only
-            evalc('tbxmanager("sync")');  % testpkg2 is extra → removed
+            evalc('tbxmanager("lock")');
+            evalc('tbxmanager("sync")');
 
-            testCase.verifyFalse(isfolder(fullfile(testCase.TempDir, "packages", "testpkg2")), ...
-                'testpkg2 should be removed by sync when not in lock file');
+            % Disk: testpkg2 must still be installed
+            testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "packages", "testpkg2")), ...
+                'testpkg2 must remain on disk — sync never deletes global packages');
+            % Path: testpkg2 must be disabled (not in enabled.json)
+            enabled = jsondecode(fileread(fullfile(testCase.TempDir, "state", "enabled.json")));
+            testCase.verifyFalse(isfield(enabled, 'testpkg2'), ...
+                'testpkg2 must be disabled from path after sync');
         end
 
         function testSyncVersionMismatch(testCase)
@@ -466,8 +476,10 @@ classdef TestLockSync < matlab.unittest.TestCase
                 'remove should delete package from tbxmanager.json dependencies');
         end
 
-        function testRemoveUninstallsPackage(testCase)
-            % Full round-trip: add testpkg1, then remove it -> should be uninstalled
+        function testRemoveKeepsGlobalPackage(testCase)
+            % Full round-trip: add testpkg1, then remove from project.
+            % The global install must persist — remove only edits tbxmanager.json.
+            % Use 'tbxmanager uninstall' to remove from the global store.
             projDir = fullfile(testCase.TempDir, 'remove_uninstall_proj');
             mkdir(projDir);
             proj.name = 'testproject'; proj.version = '0.1.0';
@@ -480,8 +492,12 @@ classdef TestLockSync < matlab.unittest.TestCase
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
                 'testpkg1 should be installed before remove');
             evalc('tbxmanager("remove", "testpkg1")');
-            testCase.verifyFalse(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
-                'testpkg1 should be uninstalled after remove');
+            testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
+                'testpkg1 must remain globally installed after project remove');
+            % Confirm it was removed from tbxmanager.json
+            projJson = jsondecode(fileread(fullfile(projDir, 'tbxmanager.json')));
+            testCase.verifyFalse(isfield(projJson.dependencies, 'testpkg1'), ...
+                'testpkg1 should be removed from tbxmanager.json dependencies');
         end
 
         % --- contextual hints ---

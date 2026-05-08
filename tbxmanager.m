@@ -525,12 +525,28 @@ end
 
 function result = tbx_compareVersions(v1, v2)
 %TBX_COMPAREVERSIONS  Compare two version strings. Returns -1, 0, or 1.
+%   Numeric versions (1.2.3) are compared numerically.
+%   Non-numeric versions (R20220609) are compared lexicographically.
     arguments
         v1 (1,1) string
         v2 (1,1) string
     end
     p1 = tbx_parseVersion(v1);
     p2 = tbx_parseVersion(v2);
+    % If either version is non-numeric (all zeros from failed parse),
+    % fall back to lexicographic comparison.
+    isNumeric1 = any(p1 > 0) || v1 == "0" || v1 == "0.0" || v1 == "0.0.0";
+    isNumeric2 = any(p2 > 0) || v2 == "0" || v2 == "0.0" || v2 == "0.0.0";
+    if ~isNumeric1 || ~isNumeric2
+        if v1 < v2
+            result = -1;
+        elseif v1 > v2
+            result = 1;
+        else
+            result = 0;
+        end
+        return;
+    end
     for i = 1:3
         if p1(i) < p2(i)
             result = -1;
@@ -968,9 +984,10 @@ function plan = tbx_resolve(requested, index)
         end
 
         if foundVersion == ""
+            availVers = strjoin(allVersions, ", ");
             error("TBXMANAGER:NoSatisfyingVersion", ...
-                "No version of '%s' satisfies constraint '%s' for platform '%s'.", ...
-                pkgName, constraint, arch);
+                "No version of '%s' satisfies '%s' for platform '%s'.\nAvailable: %s", ...
+                pkgName, constraint, arch, availVers);
         end
 
         resolved(char(pkgName)) = char(foundVersion);
@@ -1081,6 +1098,8 @@ end
 
 function sorted = tbx_sortVersionsDesc(versions)
 %TBX_SORTVERSIONSDESC  Sort version strings in descending order.
+%   Numeric versions (1.2.3) are sorted numerically.
+%   Non-numeric versions (R20220609) are sorted lexicographically descending.
     arguments
         versions string
     end
@@ -1089,8 +1108,14 @@ function sorted = tbx_sortVersionsDesc(versions)
     for i = 1:n
         parsed(i,:) = tbx_parseVersion(versions(i));
     end
-    [~, idx] = sortrows(parsed, [-1, -2, -3]);
-    sorted = versions(idx);
+    % Detect if all versions are non-numeric (all zeros)
+    if n > 0 && all(parsed(:) == 0)
+        sorted = flipud(sort(versions(:)));
+        sorted = sorted(:)';
+    else
+        [~, idx] = sortrows(parsed, [-1, -2, -3]);
+        sorted = versions(idx);
+    end
 end
 
 function sorted = tbx_toposort(plan)
@@ -1218,13 +1243,11 @@ function tbx_removeFromPath(pkgName)
         pkgDir = string(enabled.(safeName).path);
         if isfolder(pkgDir)
             pathDirs = tbx_getPathDirs(pkgDir);
+            ws = warning('off', 'MATLAB:rmpath:DirNotFound');
             for i = 1:numel(pathDirs)
-                try
-                    rmpath(pathDirs{i});
-                catch
-                    % Ignore if not on path
-                end
+                rmpath(pathDirs{i});
             end
+            warning(ws);
         end
         enabled = rmfield(enabled, safeName);
         tbx_writeEnabled(enabled);
@@ -1587,28 +1610,68 @@ function main_add(args)
         return;
     end
     project = tbx_readJson(projectFile);
+    origProject = project;  % snapshot for rollback on lock failure
     if ~isfield(project, "dependencies")
         project.dependencies = struct();
     end
+    needsResolve = {};  % packages added without explicit constraint
+    addedMsgs   = {};  % deferred until lock succeeds
     for i = 1:numel(args)
-        token = args(i);
-        parts = split(token, "@");
-        pkgName = char(parts(1));
-        if numel(parts) > 1
-            constraint = char(strjoin(parts(2:end), "@"));
+        token = char(args(i));
+        % Accept both "pkg@constraint" and "pkg==1.0" / "pkg>=1.0" etc.
+        atIdx = strfind(token, "@");
+        opMatch = regexp(token, '^([a-z][a-z0-9_-]*)(==|~=|>=|<=|>|<)(.+)$', 'tokens');
+        if ~isempty(atIdx)
+            pkgName    = token(1:atIdx(1)-1);
+            constraint = token(atIdx(1)+1:end);
+        elseif ~isempty(opMatch)
+            pkgName    = char(opMatch{1}{1});
+            constraint = [char(opMatch{1}{2}), char(opMatch{1}{3})];
         else
+            pkgName    = token;
             constraint = "*";
+            needsResolve{end+1} = pkgName; %#ok<AGROW>
         end
         project.dependencies.(pkgName) = constraint;
-        tbx_printf("  + %s (%s) added to tbxmanager.json\n", pkgName, constraint);
+        addedMsgs{end+1} = sprintf("  + %s (%s)\n", pkgName, constraint); %#ok<AGROW>
     end
+    % Write tentative project file; run lock+sync quietly — only summary shown.
     tbx_writeJson(projectFile, project);
     t0 = tic;
-    tbx_printf("\nUpdating lock file...\n");
-    main_lock(string.empty);
-    tbx_printf("\nSyncing project...\n");
+    tbx_quietMode(true);
+    cleanupQ = onCleanup(@() tbx_quietMode(false));
+    try
+        main_lock(string.empty);
+    catch
+        tbx_quietMode(false);
+        tbx_writeJson(projectFile, origProject);
+        return;
+    end
+    tbx_quietMode(false);
+
+    % Back-fill resolved versions for packages added without a constraint.
+    lockFile = fullfile(pwd, "tbxmanager.lock");
+    if ~isempty(needsResolve) && isfile(lockFile)
+        lockData = tbx_readLock(lockFile);
+        for i = 1:numel(needsResolve)
+            pkgName = needsResolve{i};
+            if isfield(lockData, "packages") && isfield(lockData.packages, pkgName)
+                resolvedVer = string(lockData.packages.(pkgName).version);
+                project.dependencies.(pkgName) = char(">=" + resolvedVer);
+                addedMsgs{i} = sprintf("  + %s@>=%s\n", pkgName, resolvedVer);
+            end
+        end
+        tbx_writeJson(projectFile, project);
+    end
+
+    for i = 1:numel(addedMsgs)
+        tbx_printf("%s", addedMsgs{i});
+    end
+
+    tbx_quietMode(true);
     main_sync(string.empty);
-    tbx_printf("Done in %.1fs.\n", toc(t0));
+    tbx_quietMode(false);
+    tbx_printSuccess("Done in %.1fs.", toc(t0));
 end
 
 %% ========================================================================
@@ -1643,11 +1706,11 @@ function main_remove(args)
     end
     tbx_writeJson(projectFile, project);
     t0 = tic;
-    tbx_printf("\nUpdating lock file...\n");
+    tbx_quietMode(true);
     main_lock(string.empty);
-    tbx_printf("\nSyncing project...\n");
     main_sync(string.empty);
-    tbx_printf("Done in %.1fs.\n", toc(t0));
+    tbx_quietMode(false);
+    tbx_printSuccess("Done in %.1fs.", toc(t0));
 end
 
 %% ========================================================================
@@ -2079,6 +2142,7 @@ function main_lock(~)
         end
     catch ME
         tbx_printError("Lock generation failed: %s", ME.message);
+        rethrow(ME);
     end
 end
 
@@ -2110,7 +2174,9 @@ function main_sync(~)
     end
 
     toInstall = {};
-    toRemove = {};
+    toDisable = {};
+
+    lockSet = string(pkgNames);
 
     % Find packages to install/update
     for i = 1:numel(pkgNames)
@@ -2127,64 +2193,42 @@ function main_sync(~)
         end
     end
 
-    % Find packages to remove (installed but not in lock)
-    lockSet = string(pkgNames);
-    for i = 1:numel(installed)
-        if ~any(lockSet == installed(i).name)
-            toRemove{end+1} = char(installed(i).name); %#ok<AGROW>
+    % Find enabled packages not in lock → disable from path (never delete from disk)
+    enabled = tbx_loadEnabled();
+    enabledNames = fieldnames(enabled);
+    for i = 1:numel(enabledNames)
+        [~, actualName] = fileparts(fileparts(char(enabled.(enabledNames{i}).path)));
+        if ~any(lockSet == string(actualName))
+            toDisable{end+1} = actualName; %#ok<AGROW>
         end
     end
 
-    if isempty(toInstall) && isempty(toRemove)
+    if isempty(toInstall) && isempty(toDisable)
         tbx_printf("Everything is up to date.\n");
         return;
     end
 
+    if ~isempty(toDisable)
+        tbx_printf("Disabling %d package(s) not in project lock:\n", numel(toDisable));
+        for i = 1:numel(toDisable)
+            tbx_printf("  - %s\n", toDisable{i});
+        end
+    end
     if ~isempty(toInstall)
-        tbx_printf("\nPackages to install/update:\n");
+        tbx_printf("Installing/updating %d package(s):\n", numel(toInstall));
         for i = 1:numel(toInstall)
             name = toInstall{i};
             ver = lockData.packages.(name).version;
-            tbx_printf("  %s@%s\n", name, ver);
+            tbx_printf("  + %s@%s\n", name, ver);
         end
     end
-    if ~isempty(toRemove)
-        tbx_printf("\nPackages to remove (not in lock file):\n");
-        for i = 1:numel(toRemove)
-            tbx_printf("  %s\n", toRemove{i});
-        end
-    end
-
     tbx_printf("\n");
-    if ~tbx_yesMode() && usejava('desktop')
-        reply = input("Proceed? [Y/n]: ", "s");
-        if ~isempty(reply) && ~strcmpi(reply, "y") && ~strcmpi(reply, "yes")
-            tbx_printf("Sync cancelled.\n");
-            return;
-        end
-    end
 
     t0 = tic;
-    % Remove extra packages
-    for i = 1:numel(toRemove)
-        pkgNameStr = string(toRemove{i});
-        [~, pkgVer] = tbx_isInstalled(pkgNameStr);
-        tbx_removeFromPath(pkgNameStr);
-        pkgDir = tbx_installDir(pkgNameStr, pkgVer);
-        if isfolder(pkgDir)
-            rmdir(char(pkgDir), "s");
-        end
-        parentDir = fullfile(tbx_baseDir(), "packages", pkgNameStr);
-        if isfolder(parentDir)
-            contents = dir(parentDir);
-            contents = contents(~ismember({contents.name}, {'.', '..'}));
-            if isempty(contents)
-                rmdir(char(parentDir));
-            end
-        end
-        tbx_printf("Removed %s.\n", pkgNameStr);
+    % Disable packages not in the project lock (path only — disk untouched)
+    for i = 1:numel(toDisable)
+        tbx_removeFromPath(string(toDisable{i}));
     end
-
     % Install/update packages from lock
     cacheDir = fullfile(tbx_baseDir(), "cache");
     for i = 1:numel(toInstall)
@@ -2247,8 +2291,21 @@ function main_init(~)
 
     tbx_writeJson(projectFile, project);
     tbx_printf("Created %s\n", projectFile);
-    tbx_printf("Fill in 'description' and 'platforms' URLs, then run 'tbxmanager lock'.\n");
-    tbx_printf("To publish, run 'tbxmanager publish' from this directory.\n");
+
+    % Entering project mode: disable all currently-enabled global packages.
+    % Re-enable with 'tbxmanager restorepath' after leaving the project.
+    enabled = tbx_loadEnabled();
+    enabledNames = fieldnames(enabled);
+    if ~isempty(enabledNames)
+        tbx_printf("Disabling %d global package(s) for project isolation.\n", numel(enabledNames));
+        for i = 1:numel(enabledNames)
+            [~, actualName] = fileparts(fileparts(char(enabled.(enabledNames{i}).path)));
+            tbx_removeFromPath(string(actualName));
+        end
+    end
+
+    tbx_printf("Fill in 'description' and 'platforms' URLs, then run 'tbxmanager add <pkg>'.\n");
+    tbx_printf("Use 'tbxmanager restorepath' to re-enable global packages when done.\n");
 end
 
 %% ========================================================================
