@@ -360,5 +360,149 @@ classdef TestLockSync < matlab.unittest.TestCase
                 'Package should be installed from lock without dependencies field');
         end
 
+        % --- add: error cases ---
+
+        function testAddNoArgs(testCase)
+            cd(testCase.ProjectDir);
+            out = evalc('tbxmanager("add")');
+            testCase.verifyTrue(contains(out, 'Usage') || contains(out, 'add'), ...
+                'Should show usage when no args');
+        end
+
+        function testAddNoProjectFile(testCase)
+            emptyDir = fullfile(testCase.TempDir, 'add_noproj');
+            mkdir(emptyDir);
+            cd(emptyDir);
+            out = evalc('tbxmanager("add", "testpkg1")');
+            testCase.verifyTrue(contains(out, 'tbxmanager.json') || contains(out, 'init'), ...
+                'Should error when no project file');
+        end
+
+        % --- add: happy paths ---
+
+        function testAddWritesToProjectFile(testCase)
+            % Fresh project with no deps
+            projDir = fullfile(testCase.TempDir, 'add_proj');
+            mkdir(projDir);
+            proj.name = 'testproject'; proj.version = '0.1.0'; proj.dependencies = struct();
+            fid = fopen(fullfile(projDir, 'tbxmanager.json'), 'w');
+            fprintf(fid, '%s', jsonencode(proj)); fclose(fid);
+            cd(projDir);
+            evalc('tbxmanager("add", "testpkg1")');
+            data = jsondecode(fileread(fullfile(projDir, 'tbxmanager.json')));
+            testCase.verifyTrue(isfield(data.dependencies, 'testpkg1'), ...
+                'add should write package into tbxmanager.json dependencies');
+        end
+
+        function testAddWithConstraintWritten(testCase)
+            projDir = fullfile(testCase.TempDir, 'add_constr_proj');
+            mkdir(projDir);
+            proj.name = 'testproject'; proj.version = '0.1.0'; proj.dependencies = struct();
+            fid = fopen(fullfile(projDir, 'tbxmanager.json'), 'w');
+            fprintf(fid, '%s', jsonencode(proj)); fclose(fid);
+            cd(projDir);
+            evalc('tbxmanager("add", "testpkg1@>=1.0")');
+            data = jsondecode(fileread(fullfile(projDir, 'tbxmanager.json')));
+            testCase.verifyTrue(isfield(data.dependencies, 'testpkg1'), ...
+                'add should write package with constraint');
+            testCase.verifyEqual(string(data.dependencies.testpkg1), ">=1.0", ...
+                'Constraint should be stored correctly');
+        end
+
+        function testAddInstallsPackage(testCase)
+            projDir = fullfile(testCase.TempDir, 'add_install_proj');
+            mkdir(projDir);
+            proj.name = 'testproject'; proj.version = '0.1.0'; proj.dependencies = struct();
+            fid = fopen(fullfile(projDir, 'tbxmanager.json'), 'w');
+            fprintf(fid, '%s', jsonencode(proj)); fclose(fid);
+            cd(projDir);
+            evalc('tbxmanager("add", "testpkg1")');
+            testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
+                'add should install the package via lock+sync');
+        end
+
+        % --- remove: error cases ---
+
+        function testRemoveNoArgs(testCase)
+            cd(testCase.ProjectDir);
+            out = evalc('tbxmanager("remove")');
+            testCase.verifyTrue(contains(out, 'Usage') || contains(out, 'remove'), ...
+                'Should show usage when no args');
+        end
+
+        function testRemoveNoProjectFile(testCase)
+            emptyDir = fullfile(testCase.TempDir, 'remove_noproj');
+            mkdir(emptyDir);
+            cd(emptyDir);
+            out = evalc('tbxmanager("remove", "testpkg1")');
+            testCase.verifyTrue(contains(out, 'tbxmanager.json') || contains(out, 'init'), ...
+                'Should error when no project file');
+        end
+
+        function testRemoveNotInDeps(testCase)
+            cd(testCase.ProjectDir);
+            out = evalc('tbxmanager("remove", "nonexistent_pkg")');
+            testCase.verifyTrue(contains(out, 'not') || contains(out, 'warning') || contains(out, 'Warning'), ...
+                'Should warn when package not in dependencies');
+        end
+
+        % --- remove: happy path ---
+
+        function testRemoveDeletesFromProjectFile(testCase)
+            % Set up project with testpkg1 as dependency
+            projDir = fullfile(testCase.TempDir, 'remove_proj');
+            mkdir(projDir);
+            proj.name = 'testproject'; proj.version = '0.1.0';
+            proj.dependencies.testpkg1 = '>=1.0';
+            fid = fopen(fullfile(projDir, 'tbxmanager.json'), 'w');
+            fprintf(fid, '%s', jsonencode(proj)); fclose(fid);
+            cd(projDir);
+            evalc('tbxmanager("lock")');
+            evalc('tbxmanager("sync")');
+            % Now remove it
+            evalc('tbxmanager("remove", "testpkg1")');
+            data = jsondecode(fileread(fullfile(projDir, 'tbxmanager.json')));
+            testCase.verifyFalse(isfield(data.dependencies, 'testpkg1'), ...
+                'remove should delete package from tbxmanager.json dependencies');
+        end
+
+        function testRemoveUninstallsPackage(testCase)
+            % Full round-trip: add testpkg1, then remove it -> should be uninstalled
+            projDir = fullfile(testCase.TempDir, 'remove_uninstall_proj');
+            mkdir(projDir);
+            proj.name = 'testproject'; proj.version = '0.1.0';
+            proj.dependencies.testpkg1 = '>=1.0';
+            fid = fopen(fullfile(projDir, 'tbxmanager.json'), 'w');
+            fprintf(fid, '%s', jsonencode(proj)); fclose(fid);
+            cd(projDir);
+            evalc('tbxmanager("lock")');
+            evalc('tbxmanager("sync")');
+            testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
+                'testpkg1 should be installed before remove');
+            evalc('tbxmanager("remove", "testpkg1")');
+            testCase.verifyFalse(isfolder(fullfile(testCase.TempDir, 'packages', 'testpkg1')), ...
+                'testpkg1 should be uninstalled after remove');
+        end
+
+        % --- contextual hints ---
+
+        function testInstallHintWhenProjectExists(testCase)
+            % install from project dir should show the add tip
+            cd(testCase.ProjectDir);
+            out = evalc('tbxmanager("install", "testpkg1")');
+            testCase.verifyTrue(contains(out, 'add') || contains(out, 'Tip'), ...
+                'install should hint about add when tbxmanager.json present');
+        end
+
+        function testInstallNoHintWithoutProject(testCase)
+            noJsonDir = fullfile(testCase.TempDir, 'no_proj_hint');
+            mkdir(noJsonDir);
+            cd(noJsonDir);
+            out = evalc('tbxmanager("install", "testpkg1")');
+            % Tip line should NOT appear without a project file
+            testCase.verifyFalse(contains(out, 'tbxmanager add'), ...
+                'install should not show add tip when no tbxmanager.json present');
+        end
+
     end
 end

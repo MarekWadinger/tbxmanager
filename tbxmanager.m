@@ -71,6 +71,10 @@ function varargout = tbxmanager(command, varargin)
             main_cache(args);
         case "publish"
             main_publish(args);
+        case "add"
+            main_add(args);
+        case "remove"
+            main_remove(args);
         case "help"
             main_help(args);
         case "internal__"
@@ -185,7 +189,8 @@ function cmd = tbx_resolveCommand(cmd)
     cmd = lower(cmd);
     knownCommands = ["install","uninstall","update","list","search","info", ...
                      "lock","sync","init","selfupdate","source","enable", ...
-                     "disable","restorepath","require","cache","publish","help"];
+                     "disable","restorepath","require","cache","publish","help", ...
+                     "add","remove"];
 
     % Exact match — return immediately
     if any(knownCommands == cmd)
@@ -1343,6 +1348,10 @@ function main_install(args)
     end
 
     tbx_printf("\nDone. %d package(s) installed.\n", numel(toInstall));
+    if isfile(fullfile(pwd, "tbxmanager.json"))
+        pkgList = strjoin(args, " ");
+        tbx_printf("Tip: In a project? Use 'tbxmanager add %s' to also record this in tbxmanager.json.\n", pkgList);
+    end
 end
 
 function tbx_installSinglePackage(pkg, cacheDir)
@@ -1469,6 +1478,82 @@ function tbx_installSinglePackage(pkg, cacheDir)
 end
 
 %% ========================================================================
+%  Command: add
+%  ========================================================================
+
+function main_add(args)
+%MAIN_ADD  Add packages to tbxmanager.json and sync the project.
+%   Project-scoped: edits tbxmanager.json, re-locks, and syncs.
+    if isempty(args)
+        tbx_printError("Usage: tbxmanager add pkg1[@constraint] ...");
+        return;
+    end
+    projectFile = fullfile(pwd, "tbxmanager.json");
+    if ~isfile(projectFile)
+        tbx_printError("No tbxmanager.json found. Run 'tbxmanager init' to create one.");
+        return;
+    end
+    project = tbx_readJson(projectFile);
+    if ~isfield(project, "dependencies")
+        project.dependencies = struct();
+    end
+    for i = 1:numel(args)
+        token = args(i);
+        parts = split(token, "@");
+        pkgName = char(parts(1));
+        if numel(parts) > 1
+            constraint = char(strjoin(parts(2:end), "@"));
+        else
+            constraint = "*";
+        end
+        project.dependencies.(pkgName) = constraint;
+        tbx_printf("  + %s (%s) added to tbxmanager.json\n", pkgName, constraint);
+    end
+    tbx_writeJson(projectFile, project);
+    tbx_printf("\nUpdating lock file...\n");
+    main_lock(string.empty);
+    tbx_printf("\nSyncing project...\n");
+    main_sync(string.empty);
+end
+
+%% ========================================================================
+%  Command: remove
+%  ========================================================================
+
+function main_remove(args)
+%MAIN_REMOVE  Remove packages from tbxmanager.json and sync the project.
+%   Project-scoped: edits tbxmanager.json, re-locks, and syncs.
+    if isempty(args)
+        tbx_printError("Usage: tbxmanager remove pkg1 [pkg2] ...");
+        return;
+    end
+    projectFile = fullfile(pwd, "tbxmanager.json");
+    if ~isfile(projectFile)
+        tbx_printError("No tbxmanager.json found. Run 'tbxmanager init' to create one.");
+        return;
+    end
+    project = tbx_readJson(projectFile);
+    if ~isfield(project, "dependencies")
+        tbx_printf("No dependencies in tbxmanager.json.\n");
+        return;
+    end
+    for i = 1:numel(args)
+        pkgName = char(args(i));
+        if isfield(project.dependencies, pkgName)
+            project.dependencies = rmfield(project.dependencies, pkgName);
+            tbx_printf("  - %s removed from tbxmanager.json\n", pkgName);
+        else
+            tbx_printWarning("'%s' is not listed in tbxmanager.json dependencies.", pkgName);
+        end
+    end
+    tbx_writeJson(projectFile, project);
+    tbx_printf("\nUpdating lock file...\n");
+    main_lock(string.empty);
+    tbx_printf("\nSyncing project...\n");
+    main_sync(string.empty);
+end
+
+%% ========================================================================
 %  Command: uninstall
 %  ========================================================================
 
@@ -1533,6 +1618,10 @@ function main_uninstall(args)
         end
 
         tbx_printf("Uninstalled %s@%s.\n", pkgName, pkgVersion);
+    end
+    if isfile(fullfile(pwd, "tbxmanager.json"))
+        pkgList = strjoin(args, " ");
+        tbx_printf("Tip: In a project? Use 'tbxmanager remove %s' to also update tbxmanager.json.\n", pkgList);
     end
 end
 
@@ -2581,6 +2670,24 @@ function main_help(args)
             tbx_printf("  pkg@~=1.2        Compatible release (>=1.2, <2.0)\n");
             tbx_printf("  pkg@>=1.0,<2.0   Range (comma = AND)\n");
 
+        case "add"
+            tbx_printf("tbxmanager add - Add packages to project\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager add pkg1 [pkg2@>=1.0] ...\n\n");
+            tbx_printf("Adds packages to tbxmanager.json, regenerates the lock file,\n");
+            tbx_printf("and syncs the project (downloads and enables the pinned versions).\n\n");
+            tbx_printf("Requires tbxmanager.json in the current directory.\n");
+            tbx_printf("Use 'tbxmanager install' for a global install without a project file.\n");
+
+        case "remove"
+            tbx_printf("tbxmanager remove - Remove packages from project\n\n");
+            tbx_printf("Usage:\n");
+            tbx_printf("  tbxmanager remove pkg1 [pkg2] ...\n\n");
+            tbx_printf("Removes packages from tbxmanager.json, regenerates the lock file,\n");
+            tbx_printf("and syncs (uninstalls packages no longer in the lock).\n\n");
+            tbx_printf("Requires tbxmanager.json in the current directory.\n");
+            tbx_printf("Use 'tbxmanager uninstall' to remove a globally installed package.\n");
+
         case "uninstall"
             tbx_printf("tbxmanager uninstall - Remove packages\n\n");
             tbx_printf("Usage:\n");
@@ -2690,31 +2797,33 @@ function main_help(args)
             desc = tbx_commandDescriptions();
             tbx_printf("tbxmanager v2.0 - MATLAB Package Manager\n\n");
             tbx_printf("Usage: tbxmanager <command> [arguments]  (alias: tbx)\n\n");
-            tbx_printf("Package commands:\n");
+            tbx_printf("Global commands  (affect ~/.tbxmanager):\n");
             tbx_printf("  %-14s%s\n", "install",   desc.install);
             tbx_printf("  %-14s%s\n", "uninstall", desc.uninstall);
             tbx_printf("  %-14s%s\n", "update",    desc.update);
             tbx_printf("  %-14s%s\n", "list",      desc.list);
             tbx_printf("  %-14s%s\n", "search",    desc.search);
             tbx_printf("  %-14s%s\n", "info",      desc.info);
-            tbx_printf("\nProject commands:\n");
+            tbx_printf("\nProject commands  (require tbxmanager.json in CWD):\n");
+            tbx_printf("  %-14s%s\n", "add",     desc.add);
+            tbx_printf("  %-14s%s\n", "remove",  desc.remove);
             tbx_printf("  %-14s%s\n", "init",    desc.init);
-            tbx_printf("  %-14s%s\n", "publish", desc.publish);
             tbx_printf("  %-14s%s\n", "lock",    desc.lock);
             tbx_printf("  %-14s%s\n", "sync",    desc.sync);
+            tbx_printf("  %-14s%s\n", "publish", desc.publish);
             tbx_printf("\nPath commands:\n");
             tbx_printf("  %-14s%s\n", "enable",      desc.enable);
             tbx_printf("  %-14s%s\n", "disable",     desc.disable);
             tbx_printf("  %-14s%s\n", "restorepath", desc.restorepath);
             tbx_printf("  %-14s%s\n", "require",     desc.require);
-            tbx_printf("\nMaintenance commands:\n");
+            tbx_printf("\nMaintenance:\n");
             tbx_printf("  %-14s%s\n", "selfupdate", desc.selfupdate);
             tbx_printf("  %-14s%s\n", "source",     desc.source);
             tbx_printf("  %-14s%s\n", "cache",      desc.cache);
             tbx_printf("  %-14s%s\n", "help",       desc.help);
             tbx_printf("\nExamples:\n");
-            tbx_printf("  tbxmanager install mpt\n");
-            tbx_printf("  tbxmanager install mpt@>=3.0 cddmex\n");
+            tbx_printf("  tbxmanager install mpt          %% global, no project needed\n");
+            tbx_printf("  tbxmanager add mpt@>=3.0        %% project: edits tbxmanager.json\n");
             tbx_printf("  tbxmanager update\n");
             tbx_printf("  tbxmanager search parametric\n");
             tbx_printf("  tbxmanager help install\n");
@@ -2743,6 +2852,8 @@ function desc = tbx_commandDescriptions()
     desc.selfupdate  = "Update tbxmanager itself";
     desc.cache       = "Manage download cache (clean/list)";
     desc.help        = "Show this help or help for a command";
+    desc.add         = "Add packages to project (edits tbxmanager.json + sync)";
+    desc.remove      = "Remove packages from project (edits tbxmanager.json + sync)";
 end
 
 function result = main_internal(args)
