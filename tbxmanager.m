@@ -19,6 +19,9 @@ function varargout = tbxmanager(command, varargin)
 %   tbxmanager cache clean|list
 %   tbxmanager help [command]
 %
+%   Commands can be abbreviated to their unique prefix (e.g., 'inst' for 'install').
+%   Shorthand alias: tbx (e.g., tbx install mpt)
+%
 %   For more information: tbxmanager help
 
 % Copyright (c) 2012-2026 Michal Kvasnica
@@ -32,7 +35,8 @@ function varargout = tbxmanager(command, varargin)
 
     tbx_setup();
 
-    switch lower(command)
+    command = tbx_resolveCommand(command);
+    switch command
         case "install"
             main_install(args);
         case "uninstall"
@@ -76,6 +80,8 @@ function varargout = tbxmanager(command, varargin)
                 main_internal(args);
             end
             return;
+        case ""
+            % Error already printed by tbx_resolveCommand
         otherwise
             tbx_printError("Unknown command '%s'. Type 'tbxmanager help' for usage.", command);
     end
@@ -144,6 +150,81 @@ function tbx_setup()
     end
     % Detect old-style installation and offer migration
     tbx_migrateOld();
+
+    % Auto-create tbx.m alias next to tbxmanager.m if not already present
+    try
+        selfDir = fileparts(mfilename('fullpath'));
+        if ~isempty(selfDir)
+            tbxAliasFile = fullfile(selfDir, "tbx.m");
+            if ~isfile(tbxAliasFile)
+                tbxContent = sprintf('%s\n%s\n%s\n%s\n%s\n', ...
+                    'function varargout = tbx(varargin)', ...
+                    '%TBX  Shorthand alias for tbxmanager.', ...
+                    '%   tbx install pkg  is equivalent to  tbxmanager install pkg', ...
+                    '    [varargout{1:nargout}] = tbxmanager(varargin{:});', ...
+                    'end');
+                fid = fopen(char(tbxAliasFile), 'w');
+                if fid ~= -1
+                    fprintf(fid, '%s', tbxContent);
+                    fclose(fid);
+                end
+            end
+        end
+    catch
+        % Silently skip if directory is read-only or mfilename unavailable
+    end
+end
+
+function cmd = tbx_resolveCommand(cmd)
+%TBX_RESOLVECOMMAND  Resolve abbreviated command to its full name.
+%   Inputs longer than 1 char that uniquely match a command prefix are expanded.
+%   Single-char or ambiguous inputs print a "Did you mean:" hint and return "".
+    arguments
+        cmd (1,1) string
+    end
+    cmd = lower(cmd);
+    knownCommands = ["install","uninstall","update","list","search","info", ...
+                     "lock","sync","init","selfupdate","source","enable", ...
+                     "disable","restorepath","require","cache","publish","help"];
+
+    % Exact match — return immediately
+    if any(knownCommands == cmd)
+        return;
+    end
+
+    % Find all commands whose name starts with cmd
+    matches = knownCommands(startsWith(knownCommands, cmd));
+
+    if isempty(matches)
+        % No match — let switch/otherwise produce the standard error
+        return;
+    end
+
+    if numel(matches) == 1 && strlength(cmd) > 1
+        % Unique unambiguous abbreviation with more than one character
+        cmd = matches(1);
+        return;
+    end
+
+    % Single char or ambiguous — show "Did you mean:" with descriptions
+    if strlength(cmd) == 1
+        tbx_printf("Unknown command '%s'. Did you mean:\n\n", cmd);
+    else
+        tbx_printf("Ambiguous command '%s'. Did you mean:\n\n", cmd);
+    end
+    desc = tbx_commandDescriptions();
+    maxLen = max(strlength(matches));
+    for i = 1:numel(matches)
+        name = matches(i);
+        pad = repmat(' ', 1, maxLen - strlength(name) + 2);
+        d = "";
+        if isfield(desc, char(name))
+            d = desc.(char(name));
+        end
+        tbx_printf("  %s%s%s\n", name, pad, d);
+    end
+    tbx_printf("\nRun 'tbxmanager help <command>' for detailed usage.\n");
+    cmd = "";
 end
 
 function d = tbx_baseDir()
@@ -1312,47 +1393,57 @@ function tbx_installSinglePackage(pkg, cacheDir)
     if ~isfolder(destDir)
         mkdir(char(destDir));
     end
-    tbx_printf("  Extracting...\n");
-    tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
-    if isfolder(tmpDir)
-        rmdir(char(tmpDir), "s");
-    end
-    mkdir(char(tmpDir));
-    try
-        cacheStr = string(cacheFile);
-        if endsWith(cacheStr, ".tar.gz") || endsWith(cacheStr, ".tgz")
-            untar(char(cacheFile), char(tmpDir));
-        elseif endsWith(cacheStr, ".zip")
-            unzip(char(cacheFile), char(tmpDir));
-        else
-            error("TBXMANAGER:UnsupportedArchive", ...
-                "Unsupported archive format: %s", cacheFile);
+    % Single-file packages (.m, .p) — copy directly, no extraction needed
+    cacheStr = string(cacheFile);
+    [~, cacheBase, cacheExt] = fileparts(char(cacheStr));
+    isSingleFile = any(cacheExt == [".m", ".p"]);
+    if isSingleFile
+        tbx_printf("  Copying single-file package...\n");
+        copyfile(char(cacheFile), fullfile(char(destDir), cacheBase + cacheExt));
+    else
+        tbx_printf("  Extracting...\n");
+        tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
+        if isfolder(tmpDir)
+            rmdir(char(tmpDir), "s");
         end
-    catch ME
-        error("TBXMANAGER:ExtractFailed", ...
-            "Failed to extract %s: %s", cacheFile, ME.message);
+        mkdir(char(tmpDir));
+        try
+            if endsWith(cacheStr, ".tar.gz") || endsWith(cacheStr, ".tgz")
+                untar(char(cacheFile), char(tmpDir));
+            elseif endsWith(cacheStr, ".zip")
+                unzip(char(cacheFile), char(tmpDir));
+            else
+                error("TBXMANAGER:UnsupportedArchive", ...
+                    "Unsupported archive format: %s", cacheFile);
+            end
+        catch ME
+            error("TBXMANAGER:ExtractFailed", ...
+                "Failed to extract %s: %s", cacheFile, ME.message);
+        end
     end
 
-    % Flatten single top-level folder if present
-    tmpContents = dir(tmpDir);
-    tmpContents = tmpContents(~ismember({tmpContents.name}, {'.', '..'}));
-    if numel(tmpContents) == 1 && tmpContents(1).isdir
-        innerDir = fullfile(tmpDir, tmpContents(1).name);
-        movefile(fullfile(char(innerDir), "*"), char(destDir));
-        % Move hidden items
-        hiddenItems = dir(fullfile(innerDir, ".*"));
-        hiddenItems = hiddenItems(~ismember({hiddenItems.name}, {'.', '..'}));
-        for h = 1:numel(hiddenItems)
-            try
-                movefile(fullfile(char(innerDir), hiddenItems(h).name), char(destDir));
-            catch
+    % Flatten single top-level folder if present (archive installs only)
+    if ~isSingleFile
+        tmpContents = dir(tmpDir);
+        tmpContents = tmpContents(~ismember({tmpContents.name}, {'.', '..'}));
+        if numel(tmpContents) == 1 && tmpContents(1).isdir
+            innerDir = fullfile(tmpDir, tmpContents(1).name);
+            movefile(fullfile(char(innerDir), "*"), char(destDir));
+            % Move hidden items
+            hiddenItems = dir(fullfile(innerDir, ".*"));
+            hiddenItems = hiddenItems(~ismember({hiddenItems.name}, {'.', '..'}));
+            for h = 1:numel(hiddenItems)
+                try
+                    movefile(fullfile(char(innerDir), hiddenItems(h).name), char(destDir));
+                catch
+                end
             end
+        else
+            movefile(fullfile(char(tmpDir), "*"), char(destDir));
         end
-    else
-        movefile(fullfile(char(tmpDir), "*"), char(destDir));
-    end
-    if isfolder(tmpDir)
-        rmdir(char(tmpDir), "s");
+        if isfolder(tmpDir)
+            rmdir(char(tmpDir), "s");
+        end
     end
 
     % Write meta.json
@@ -2596,38 +2687,62 @@ function main_help(args)
             tbx_printf("The token is prompted on first use and saved to config.\n");
 
         otherwise
+            desc = tbx_commandDescriptions();
             tbx_printf("tbxmanager v2.0 - MATLAB Package Manager\n\n");
-            tbx_printf("Usage: tbxmanager <command> [arguments]\n\n");
+            tbx_printf("Usage: tbxmanager <command> [arguments]  (alias: tbx)\n\n");
             tbx_printf("Package commands:\n");
-            tbx_printf("  install       Install packages with dependency resolution\n");
-            tbx_printf("  uninstall     Remove installed packages\n");
-            tbx_printf("  update        Update packages to latest versions\n");
-            tbx_printf("  list          Show installed packages\n");
-            tbx_printf("  search        Search available packages\n");
-            tbx_printf("  info          Show package details\n");
+            tbx_printf("  %-14s%s\n", "install",   desc.install);
+            tbx_printf("  %-14s%s\n", "uninstall", desc.uninstall);
+            tbx_printf("  %-14s%s\n", "update",    desc.update);
+            tbx_printf("  %-14s%s\n", "list",      desc.list);
+            tbx_printf("  %-14s%s\n", "search",    desc.search);
+            tbx_printf("  %-14s%s\n", "info",      desc.info);
             tbx_printf("\nProject commands:\n");
-            tbx_printf("  init          Create tbxmanager.json template\n");
-            tbx_printf("  publish       Publish package to the registry\n");
-            tbx_printf("  lock          Generate tbxmanager.lock from tbxmanager.json\n");
-            tbx_printf("  sync          Install from tbxmanager.lock\n");
+            tbx_printf("  %-14s%s\n", "init",    desc.init);
+            tbx_printf("  %-14s%s\n", "publish", desc.publish);
+            tbx_printf("  %-14s%s\n", "lock",    desc.lock);
+            tbx_printf("  %-14s%s\n", "sync",    desc.sync);
             tbx_printf("\nPath commands:\n");
-            tbx_printf("  enable        Add packages to MATLAB path\n");
-            tbx_printf("  disable       Remove packages from MATLAB path\n");
-            tbx_printf("  restorepath   Restore paths for enabled packages\n");
-            tbx_printf("  require       Assert packages are enabled\n");
+            tbx_printf("  %-14s%s\n", "enable",      desc.enable);
+            tbx_printf("  %-14s%s\n", "disable",     desc.disable);
+            tbx_printf("  %-14s%s\n", "restorepath", desc.restorepath);
+            tbx_printf("  %-14s%s\n", "require",     desc.require);
             tbx_printf("\nMaintenance commands:\n");
-            tbx_printf("  selfupdate    Update tbxmanager itself\n");
-            tbx_printf("  source        Manage index sources (add/remove/list)\n");
-            tbx_printf("  cache         Manage download cache (clean/list)\n");
-            tbx_printf("  help          Show this help or help for a command\n");
+            tbx_printf("  %-14s%s\n", "selfupdate", desc.selfupdate);
+            tbx_printf("  %-14s%s\n", "source",     desc.source);
+            tbx_printf("  %-14s%s\n", "cache",      desc.cache);
+            tbx_printf("  %-14s%s\n", "help",       desc.help);
             tbx_printf("\nExamples:\n");
             tbx_printf("  tbxmanager install mpt\n");
             tbx_printf("  tbxmanager install mpt@>=3.0 cddmex\n");
             tbx_printf("  tbxmanager update\n");
             tbx_printf("  tbxmanager search parametric\n");
             tbx_printf("  tbxmanager help install\n");
-            tbx_printf("\nStorage: %s\n", tbx_baseDir());
+            tbx_printf("\nCommands can be abbreviated to their unique prefix (e.g., 'inst' for 'install').\n");
+            tbx_printf("Storage: %s\n", tbx_baseDir());
     end
+end
+
+function desc = tbx_commandDescriptions()
+%TBX_COMMANDDESCRIPTIONS  Return one-line descriptions for all commands.
+    desc.install     = "Install packages with dependency resolution";
+    desc.uninstall   = "Remove installed packages";
+    desc.update      = "Update packages to latest versions";
+    desc.list        = "Show installed packages";
+    desc.search      = "Search available packages";
+    desc.info        = "Show package details";
+    desc.lock        = "Generate tbxmanager.lock from tbxmanager.json";
+    desc.sync        = "Install from tbxmanager.lock";
+    desc.init        = "Create tbxmanager.json template";
+    desc.publish     = "Publish package to the registry";
+    desc.source      = "Manage index sources (add/remove/list)";
+    desc.enable      = "Add packages to MATLAB path";
+    desc.disable     = "Remove packages from MATLAB path";
+    desc.restorepath = "Restore paths for enabled packages";
+    desc.require     = "Assert packages are enabled";
+    desc.selfupdate  = "Update tbxmanager itself";
+    desc.cache       = "Manage download cache (clean/list)";
+    desc.help        = "Show this help or help for a command";
 end
 
 function result = main_internal(args)
@@ -2696,6 +2811,8 @@ function result = main_internal(args)
         case "addToPath"
             tbx_addToPath(funcArgs(1), funcArgs(2));
             result = true;
+        case "resolveCommand"
+            result = tbx_resolveCommand(funcArgs(1));
         otherwise
             error("TBXMANAGER:Internal", "Unknown internal function: %s", funcName);
     end
