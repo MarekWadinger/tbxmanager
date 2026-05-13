@@ -22,7 +22,7 @@ matlab-cli: ## Open interactive MATLAB CLI with tbxmanager on path
 # ── Docs ──────────────────────────────────────────────
 
 docs: ## Serve docs locally (http://127.0.0.1:8000)
-	uv run mkdocs serve
+	uv run python -c "import logging; logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s'); import scripts.serve_patch; from mkdocs.commands.serve import serve; serve()"
 
 docs-build: check-links-fast ## Build docs to site/
 	cp tbxmanager.m docs/tbxmanager.m
