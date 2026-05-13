@@ -1,3 +1,15 @@
+## v2.5.0 (2026-05-13)
+
+### Feat
+
+- centralize URLs with make update-urls and add link checker
+
+### Fix
+
+- **site**: patch mkdocs livereload for Python 3.14 compatibility
+- **client**: char concatenation in single-file package installer
+- CITATION.cff should only reference the original MPT article
+
 ## v2.4.0 (2026-05-08)
 
 ### Feat
