@@ -1,78 +1,118 @@
-# Contributing
+# Contributing to tbxmanager
 
-## How the Registry Works
+Want to improve the MATLAB package manager itself? This guide covers development setup, code conventions, and the contribution workflow.
 
-The tbxmanager registry is a Git repository at [MarekWadinger/tbxmanager-registry](https://github.com/MarekWadinger/tbxmanager-registry). Each package has a JSON file at `packages/[name]/package.json` containing metadata and download URLs for all versions.
+!!! note "Looking to publish a package?"
+    If you want to register your own MATLAB toolbox, see [Quick Start for Authors](quick-start-authors.md) instead.
 
-When a PR is merged:
+## Development Setup
 
-1. CI rebuilds `index.json` — a combined index of all packages
-2. The index is deployed to GitHub Pages
-3. The MATLAB client fetches this index to discover packages
+### Prerequisites
 
-## Submitting a New Package
+- **MATLAB R2022a+** (R2025b recommended)
+- **Python 3.10+** with [uv](https://docs.astral.sh/uv/)
+- **Git**
 
-!!! tip
-    The easiest way to submit a package is `tbxmanager publish` — see [Quick Start for Authors](quick-start-authors.md). The manual process below is for contributors who want to understand the registry internals or submit on behalf of others.
+### Clone and Install
 
-1. **Fork** the [tbxmanager-registry](https://github.com/MarekWadinger/tbxmanager-registry) repo
-2. **Create** `packages/your-package/package.json` with the required format
-3. **Open a PR** — CI validates your submission automatically
-4. **Fix any issues** flagged by CI
-5. **Maintainers review and merge**
+```bash
+git clone https://github.com/MarekWadinger/tbxmanager.git
+cd tbxmanager
+make dev          # Install Python dev dependencies
+```
 
-### What CI Checks
+### Useful Make Targets
 
-- Valid JSON syntax
-- Required fields present (name, description, versions)
-- Package name matches directory name
-- Valid version strings (semver)
-- Valid platform names (win64, maci64, maca64, glnxa64, all)
-- HTTPS download URLs
-- SHA256 hash format (64-char hex)
-- URL reachability (HEAD request)
+| Command | What it does |
+| ------- | ------------ |
+| `make help` | Show all targets |
+| `make test` | Lint + validate (no MATLAB needed) |
+| `make test-matlab` | Run MATLAB test suite |
+| `make test-matlab-verbose` | Verbose MATLAB test output |
+| `make test-matlab-single CLASS=TestName` | Run a single test class |
+| `make test-all` | Everything (lint + validate + MATLAB) |
+| `make docs` | Serve docs locally at `http://127.0.0.1:8000` |
+| `make lint` | Lint Python scripts |
+| `make validate` | Validate JSON fixtures against schemas |
 
-## Package JSON Format
+## Project Structure
 
-See [Creating Packages](creating-packages.md) for the full format specification.
+```text
+tbxmanager.m          # The MATLAB client (single-file, all code here)
+tests/                # MATLAB unit tests (matlab.unittest.TestCase)
+  fixtures/           # Test data (JSON fixtures)
+scripts/              # Python tooling (migration, validation, indexing)
+  schemas/            # JSON schemas for all data formats
+docs/                 # MkDocs Material site source
+.github/workflows/    # CI/CD (test, deploy-site, release)
+```
 
-## Updating an Existing Package
+## Code Conventions
 
-1. Edit `packages/your-package/package.json`
-2. Add a new version entry to the `versions` object
-3. Open a PR
+### MATLAB (`tbxmanager.m`)
+
+- **All code lives in one file** as local functions — this enables the one-line install
+- `tbx_` prefix for internal helper functions (e.g., `tbx_setup`, `tbx_fetchJson`)
+- `main_` prefix for command handler functions (e.g., `main_install`, `main_update`)
+- Use `arguments` blocks for input validation
+- Use `string` arrays (`"string"`) not char arrays (`'string'`) for new code
+- Target MATLAB R2022a+ features only
+
+### Tests
+
+- Framework: `matlab.unittest.TestCase`
+- Tests must be self-contained: create all mock data at runtime
+- Test files: `tests/Test*.m`
+
+### Python Scripts
+
+- Standard library preferred; minimal dependencies
+- Linted with `ruff`
+
+## Contribution Workflow
+
+1. **Fork** [MarekWadinger/tbxmanager](https://github.com/MarekWadinger/tbxmanager)
+2. **Branch** from `dev`:
+
+    ```bash
+    git checkout dev
+    git checkout -b feat/my-feature
+    ```
+
+3. **Make changes** — edit `tbxmanager.m`, add tests in `tests/`
+4. **Verify** before committing:
+
+    ```bash
+    make test-all
+    ```
+
+5. **Commit** using [conventional commits](https://www.conventionalcommits.org/):
+
+    ```text
+    feat(client): add frobnicate command
+    fix(client): handle empty version string
+    docs(site): update install instructions
+    ```
+
+6. **Open a PR** to `dev`
+
+### What Gets CI-Tested
+
+- Python linting (`ruff`)
+- JSON schema validation
+- MATLAB tests on 2 releases x 3 OSes (via GitHub Actions matrix)
 
 ## Reporting Issues
 
-- **Broken download links**: Open an issue on the registry repo
-- **Package bugs**: Contact the package author (see homepage/authors)
-- **tbxmanager client bugs**: Open an issue on [MarekWadinger/tbxmanager](https://github.com/MarekWadinger/tbxmanager)
-
-## Contributing to tbxmanager Itself
-
-1. Fork [MarekWadinger/tbxmanager](https://github.com/MarekWadinger/tbxmanager)
-2. Create a feature branch from `dev`
-3. Make changes to `tbxmanager.m` and add tests
-4. Open a PR to `dev`
-
-### Development Setup
-
-```matlab
-% Clone and work on tbxmanager.m
-% Run tests:
-cd tests
-results = runtests;
-```
-
-### Code Conventions
-
-- All code in `tbxmanager.m` as local functions
-- `tbx_` prefix for internal helpers, `main_` prefix for commands
-- MATLAB R2022a+ features only
-- Tests using `matlab.unittest.TestCase`
+| Issue type | Where to report |
+| ---------- | --------------- |
+| Client bugs (`tbxmanager.m`) | [MarekWadinger/tbxmanager/issues](https://github.com/MarekWadinger/tbxmanager/issues) |
+| Registry/index issues | [MarekWadinger/tbxmanager-registry/issues](https://github.com/MarekWadinger/tbxmanager-registry/issues) |
+| Broken package downloads | Contact the package author (see `tbxmanager info <pkg>`) |
+| Documentation issues | [MarekWadinger/tbxmanager/issues](https://github.com/MarekWadinger/tbxmanager/issues) |
 
 ## Next Steps
 
-- [Quick Start for Authors](quick-start-authors.md) -- publish your first package
-- [Creating Packages](creating-packages.md) -- full metadata reference
-- [Troubleshooting](troubleshooting.md) -- common issues and solutions
+- [Commands Reference](commands.md) — all CLI commands
+- [Concepts](concepts.md) — architecture and design decisions
+- [Troubleshooting](troubleshooting.md) — common issues and solutions
