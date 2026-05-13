@@ -1,5 +1,5 @@
 site_name: tbxmanager
-site_url: https://tbxmanager.com
+site_url: https://marekwadinger.github.io/tbxmanager
 site_description: The MATLAB Package Manager
 repo_url: https://github.com/MarekWadinger/tbxmanager
 repo_name: MarekWadinger/tbxmanager
@@ -8,14 +8,14 @@ theme:
   name: material
   palette:
     - scheme: default
-      primary: blue
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: blue
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -27,8 +27,8 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
-  logo: assets/logo.svg
-  favicon: assets/logo.svg
+  logo: assets/logo.png
+  favicon: assets/logo.png
   icon:
     repo: fontawesome/brands/github
 
@@ -58,6 +58,9 @@ markdown_extensions:
   - attr_list
   - md_in_html
   - tables
+
+extra_css:
+  - stylesheets/matlab-theme.css
 
 extra:
   social:
