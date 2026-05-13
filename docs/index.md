@@ -62,6 +62,13 @@ savepath
 ## Why tbxmanager?
 
 <!-- markdownlint-disable MD046 -->
+=== "With tbxmanager"
+
+    ```matlab
+    tbxmanager install mpt
+    % Done. Dependencies resolved, verified, and on your path.
+    ```
+
 === "Without tbxmanager"
 
     ```matlab
@@ -75,61 +82,66 @@ savepath
     % 5. Hope the versions are compatible
     % 6. Tell your collaborator to do the same (good luck)
     ```
-
-=== "With tbxmanager"
-
-    ```matlab
-    tbxmanager install mpt
-    % Done. Dependencies resolved, verified, and on your path.
-    ```
 <!-- markdownlint-enable MD046 -->
 
-tbxmanager is to MATLAB what [pip](https://pip.pypa.io) is to Python or npm is to JavaScript — a package manager that handles downloads, dependencies, and versioning so you don't have to.
+tbxmanager is to MATLAB what [pip](https://pip.pypa.io) or [uv](https://docs.astral.sh/uv/) is to Python or npm is to JavaScript — a package manager that handles downloads, dependencies, and versioning so you don't have to.
+
+!!! tip "Use `tbx` instead of `tbxmanager`"
+    The `tbx` shorthand is created automatically during setup. All examples below use it.
 
 ## Quick Start
 
 ```matlab
->> tbxmanager install oasesmex --yes
+>> tbx install mpt --yes
 Resolving dependencies...
 
 Installation plan:
+  + yalmip@R20250626_fix2 (all)
+  + sedumi@1.3 (maca64)
+  + lcp@1.0.3 (maca64)
+  + cddmex@1.0.1 (maca64)
+  + glpkmex@1.0 (maca64)
+  + clpmex@1.0 (maca64)
+  + espresso@1.0 (maca64)
+  + hysdel@2.0.6 (maca64)
   + oasesmex@3.2.0 (maca64)
+  + qpspline@1.0 (all)
+  + mpt@3.2.1 (all)
 
-Installing oasesmex@3.2.0 ...
-  Downloading...
-  Verifying SHA256...
-  Extracting...
-  Enabled oasesmex@3.2.0.
+Installing 11 package(s)...
 
-Done in 1.2s. 1 package(s) installed.
+Done in 7.1s. 11 package(s) installed.
 ```
 
 ```matlab
->> tbxmanager search toolbox
-Found 3 package(s):
+>> tbx search mpt
+Found 5 package(s):
 
-Name    Latest       Description
----------------------------------------------------------------
-brcm    v0.96(Beta)  The Building Resistance-Capacitance ...
-mpt     3.2.1        Multi-Parametric Toolbox 3.0
-mptdoc  3.0.4        Multi-Parametric Toolbox documentation
+Name        Latest     Description
+----------------------------------------------------------------------
+mpt         3.2.1      Multi-Parametric Toolbox 3.0
+mpt2        2.6.3      MPT2
+mpt3lowcom  1.0.3      Low-complexity control design module for MPT3
+mptdoc      3.0.4      Multi-Parametric Toolbox documentation
+mptplus     R20260508  mptplus
 ```
 
 ```matlab
->> tbxmanager tree
-mpt2@2.6.3
-+-- yalmip@R20250626_fix2
-+-- sedumi@1.3
-+-- lcp@1.0.3
-+-- cddmex@1.0.1
-+-- glpkmex@1.0
-+-- clpmex@1.0
-+-- espresso@1.0
-\-- hysdel@2.0.6
-oasesmex@3.2.0
-qpspline@1.0
+>> tbx tree
+mpt@3.2.1
+├── yalmip@R20250626_fix2
+├── sedumi@1.3
+├── lcp@1.0.3
+├── cddmex@1.0.1
+├── glpkmex@1.0
+├── clpmex@1.0
+├── espresso@1.0
+├── hysdel@2.0.6
+├── oasesmex@3.2.0
+└── qpspline@1.0
 ```
 
-**All commands have shorthands:** `tbx inst mpt` works like `tbxmanager install mpt`. Any unique prefix works.
+!!! tip "Command abbreviations"
+    Commands can be abbreviated to their unique prefix: `tbx inst mpt` works like `tbx install mpt`.
 
 [Get Started :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
