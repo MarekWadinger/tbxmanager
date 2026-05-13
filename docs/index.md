@@ -82,7 +82,7 @@ savepath
     % Done. Dependencies resolved, verified, and on your path.
     ```
 
-tbxmanager is to MATLAB what [pip](https://pip.pypa.io) is to Python or [npm](https://www.npmjs.com/) is to JavaScript — a package manager that handles downloads, dependencies, and versioning so you don't have to.
+tbxmanager is to MATLAB what [pip](https://pip.pypa.io) is to Python or npm is to JavaScript — a package manager that handles downloads, dependencies, and versioning so you don't have to.
 
 ## Quick Start
 
