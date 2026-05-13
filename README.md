@@ -25,12 +25,12 @@
 - **SHA256 verification** -- every download checked for integrity before reaching your path
 - **Cross-platform** -- Windows, macOS (Intel & Apple Silicon), Linux, with automatic platform detection
 - **Community registry** -- open package index at [tbxmanager-registry](https://github.com/MarekWadinger/tbxmanager-registry), anyone can submit
-- **Prefix shorthand** -- `tbx inst mpt` works just like `tbxmanager install mpt`
+- **Command shorthand** -- `tbx inst mpt` works just like `tbxmanager install mpt`
 
 ## Installation
 
 ```matlab
-websave('tbxmanager.m', 'https://tbxmanager.com/tbxmanager.m');
+websave('tbxmanager.m', 'https://marekwadinger.github.io/tbxmanager/tbxmanager.m');
 tbxmanager
 savepath
 ```
@@ -41,7 +41,7 @@ Add to your `startup.m` for automatic path restoration:
 tbxmanager restorepath
 ```
 
-See the [installation guide](https://tbxmanager.com/getting-started) for details.
+See the [installation guide](https://marekwadinger.github.io/tbxmanager/getting-started) for details.
 
 ## Projects
 
@@ -51,101 +51,119 @@ Initialize a project, add dependencies, and share the lockfile with collaborator
 
 ```matlab
 >> tbxmanager init
-Created tbxmanager.json in /home/user/my-project
+Created /home/user/my-project/tbxmanager.json
+Disabling 2 global package(s) for project isolation.
+Fill in 'description' and 'platforms' URLs, then run 'tbxmanager add <pkg>'.
+Use 'tbxmanager restorepath' to re-enable global packages when done.
 
->> tbxmanager add mpt
-  + mpt@>=3.0.0
-Done in 4.2s.
-
->> tbxmanager add yalmip lcp
-  + yalmip@>=1.0.0
-  + lcp@>=1.2.0
-Done in 3.1s.
-
->> tbxmanager remove lcp
-  - lcp removed from tbxmanager.json
+>> tbxmanager add lcp --yes
+  + lcp@>=1.0.3
 Done in 0.8s.
+
+>> tbxmanager add sedumi --yes
+  + sedumi@>=1.3
+Done in 0.5s.
+
+>> tbxmanager remove sedumi
+  - sedumi removed from tbxmanager.json
+Done in 0.4s.
 
 >> tbxmanager tree
 my-project
- +-- mpt@3.0.0
- |    +-- yalmip@1.0.0
- |    +-- lcp@1.2.0
- +-- yalmip@1.0.0
++-- lcp@1.0.3
 ```
 
 When a collaborator clones the project, `sync` installs the exact versions from the lockfile:
 
 ```matlab
 >> tbxmanager sync
-Syncing from tbxmanager.lock ...
-Installing/updating 3 package(s):
-  + mpt@3.0.0
-  + yalmip@1.0.0
-  + lcp@1.2.0
-
-Sync complete in 5.3s.
+Syncing from /home/user/my-project/tbxmanager.lock ...
+Everything is up to date.
 ```
 
-See the [project documentation](https://tbxmanager.com/getting-started) to get started.
+Verify the environment matches the lockfile without making changes:
 
-## Global packages
+```matlab
+>> tbxmanager check
+  ✓ lcp@1.0.3
+```
+
+See the [project documentation](https://marekwadinger.github.io/tbxmanager/getting-started#project-dependencies) to get started.
+
+## Global Packages
 
 For quick one-off installs outside a project context, `install` and `uninstall` work directly on the global MATLAB path. These are the classic tbxmanager commands, compatible with scripts and CI workflows that don't use a project file:
 
 ```matlab
->> tbxmanager install mpt
+>> tbxmanager install oasesmex --yes
 Resolving dependencies...
-  + mpt@3.0.0
-  + yalmip@1.0.0
-  + lcp@1.2.0
-Installed 3 packages in 6.1s.
+
+Installation plan:
+  + oasesmex@3.2.0 (maca64)
+
+Installing oasesmex@3.2.0 ...
+  Downloading...
+  Verifying SHA256...
+  Extracting...
+  Enabled oasesmex@3.2.0.
+
+Done in 1.2s. 1 package(s) installed.
 
 >> tbxmanager list
-  mpt       3.0.0   enabled
-  yalmip    1.0.0   enabled
-  lcp       1.2.0   enabled
+Name      Version         Latest          Status
+----------------------------------------------------
+lcp       1.0.3           1.0.3           disabled
+oasesmex  3.2.0           3.2.0           disabled
+sedumi    1.3             1.3             disabled
+yalmip    R20250626_fix2  R20250626_fix2  disabled
 
->> tbxmanager search optimization
-  mpt         3.0.0   Multi-Parametric Toolbox
-  yalmip      1.0.0   YALMIP optimization toolbox
+>> tbxmanager search toolbox
+Found 3 package(s):
+
+Name    Latest       Description
+---------------------------------------------------------------
+brcm    v0.96(Beta)  The Building Resistance-Capacitance ...
+mpt     3.2.1        Multi-Parametric Toolbox 3.0
+mptdoc  3.0.4        Multi-Parametric Toolbox documentation
 
 >> tbxmanager update
-Checking for updates...
-  mpt 3.0.0 -> 3.1.0
-Updated 1 package in 2.4s.
+  lcp: 1.0.3 (up to date)
+  oasesmex: 3.2.0 (up to date)
+  sedumi: 1.3 (up to date)
+  yalmip: R20250626_fix2 (up to date)
+All packages are up to date.
 
->> tbxmanager uninstall lcp
-Uninstalled lcp@1.2.0.
+>> tbxmanager uninstall oasesmex
+Uninstalled oasesmex@3.2.0.
 ```
 
 > **Note:** `install`/`uninstall` modify the global package store. In a project with `tbxmanager.json`, prefer `add`/`remove` -- they keep the manifest and lockfile in sync and won't affect packages used by other projects.
 
-See the [command reference](https://tbxmanager.com/commands) for all options.
+See the [command reference](https://marekwadinger.github.io/tbxmanager/commands) for all options.
 
-## Publishing packages
+## Publishing Packages
 
 Publish your own MATLAB toolbox to the community registry:
 
 ```matlab
->> tbxmanager init           % creates tbxmanager.json with package metadata
->> tbxmanager publish        % validates and submits to the registry
+>> tbxmanager init        % creates tbxmanager.json with package metadata
+>> tbxmanager publish     % builds archive, creates GitHub release, submits to registry
 ```
 
-Or [submit manually](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) via the registry issue form. See the [Quick Start for Authors](https://tbxmanager.com/quick-start-authors) for the full guide.
+Or [submit manually](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) via the registry issue form. See the [Quick Start for Authors](https://marekwadinger.github.io/tbxmanager/quick-start-authors) for the full guide.
 
 ## Documentation
 
-Full documentation at [tbxmanager.com](https://tbxmanager.com):
+Full documentation at [marekwadinger.github.io/tbxmanager](https://marekwadinger.github.io/tbxmanager):
 
-- [Getting Started](https://tbxmanager.com/getting-started)
-- [Command Reference](https://tbxmanager.com/commands)
-- [Creating Packages](https://tbxmanager.com/quick-start-authors)
-- [Troubleshooting](https://tbxmanager.com/troubleshooting)
+- [Getting Started](https://marekwadinger.github.io/tbxmanager/getting-started)
+- [Command Reference](https://marekwadinger.github.io/tbxmanager/commands)
+- [Creating Packages](https://marekwadinger.github.io/tbxmanager/quick-start-authors)
+- [Troubleshooting](https://marekwadinger.github.io/tbxmanager/troubleshooting)
 
 ## Contributing
 
-[Submit packages](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) to the registry, or contribute to the client by opening a PR to the `dev` branch. See the [contributing guide](https://tbxmanager.com/contributing).
+[Submit packages](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) to the registry, or contribute to the client by opening a PR to the `dev` branch. See the [contributing guide](https://marekwadinger.github.io/tbxmanager/contributing).
 
 ## Acknowledgements
 

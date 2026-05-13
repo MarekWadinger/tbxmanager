@@ -103,39 +103,69 @@ git push
 
 That's the only file you need to add to your repo.
 
-## Step 3: Create a GitHub Release
+## Step 3: Publish
 
-1. Zip your package (exclude `.git`, tests, data files you don't want distributed):
+From MATLAB, run `tbxmanager publish` in your project directory:
 
-    ```bash
-    zip -r rls-identification.zip functions/ main.m LICENSE README.md
-    ```
+```matlab
+>> cd RLS_identification
+>> tbxmanager publish
+Building archive... done (excluded: .git, .github, tests, docs, *.mat, *.slx)
+Creating GitHub release v1.0.0... done
+Uploading rls-identification-all.zip... done
+Submitting to registry... done
 
-1. Tag and push:
+Package submitted! A maintainer will review and merge the PR.
+```
 
-    ```bash
-    git tag v1.0.0
-    git push --tags
-    ```
+That single command:
 
-1. Go to your repo on GitHub, click **Releases** > **Create a new release**
-1. Select the `v1.0.0` tag, add a title
-1. **Attach `rls-identification.zip`** as a release asset
-1. Click **Publish release**
+1. Builds a zip archive (respecting `publish.exclude` from `tbxmanager.json`)
+1. Creates a GitHub release tagged `v1.0.0`
+1. Uploads the archive as a release asset
+1. Submits the package to the tbxmanager registry
 
-## Step 4: Submit to the Registry
+On first use, tbxmanager prompts for a GitHub token with `public_repo` scope and saves it to `~/.tbxmanager/config.json`.
 
-1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues/new/choose)
-1. Click **"Submit Package"**
-1. Fill in:
-    - **Repository URL:** `https://github.com/MarekWadinger/RLS_identification`
-    - **Release tag:** `v1.0.0`
-    - **Platform:** `all (pure MATLAB, no MEX files)`
-1. Click **Submit new issue**
+<!-- markdownlint-disable MD046 -->
+??? "Alternative: Manual submission (without tbxmanager)"
+
+    If you prefer to publish without the `tbxmanager publish` command, you can do it by hand:
+
+    **Create a GitHub Release:**
+
+    1. Zip your package (exclude `.git`, tests, data files you don't want distributed):
+
+        ```bash
+        zip -r rls-identification.zip functions/ main.m LICENSE README.md
+        ```
+
+    1. Tag and push:
+
+        ```bash
+        git tag v1.0.0
+        git push --tags
+        ```
+
+    1. Go to your repo on GitHub, click **Releases** > **Create a new release**
+    1. Select the `v1.0.0` tag, add a title
+    1. **Attach `rls-identification.zip`** as a release asset
+    1. Click **Publish release**
+
+    **Submit to the Registry:**
+
+    1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues)
+    1. Click **"Submit Package"**
+    1. Fill in:
+        - **Repository URL:** `https://github.com/MarekWadinger/RLS_identification`
+        - **Release tag:** `v1.0.0`
+        - **Platform:** `all (pure MATLAB, no MEX files)`
+    1. Click **Submit new issue**
+<!-- markdownlint-enable MD046 -->
 
 ## What Happens Automatically
 
-After you submit the issue, a bot takes over:
+Whether you used `tbxmanager publish` or the manual issue form, a bot takes over:
 
 ```text
 You: Fill in the submission form
@@ -197,8 +227,9 @@ When you improve your package:
 
 1. Update `version` in `tbxmanager.json` (e.g., `1.0.0` -> `1.1.0`)
 1. Commit and push your changes
-1. Create a new release with the updated zip
-1. Submit another issue on the registry (same form, new tag)
+1. Run `tbxmanager publish` again -- it picks up the new version automatically
+
+Alternatively, you can create a release and submit manually (same steps as the manual workflow above).
 
 Users update with:
 
@@ -289,11 +320,11 @@ Edit the `publish.exclude` list:
 
 ### My token expired
 
-Create a new fine-grained token (Step 3) and update the `TBXMANAGER_REGISTRY_TOKEN` secret in your repo settings.
+Run `tbxmanager publish` again -- it will prompt for a new token and save it to `~/.tbxmanager/config.json`. If you used the manual workflow with a `TBXMANAGER_REGISTRY_TOKEN` secret, create a new fine-grained token and update the secret in your repo settings.
 
-### The action failed
+### The submission failed
 
-Check the bot's comment on your submission issue. Common issues:
+Check the bot's comment on the registry issue. Common issues:
 
 - **`tbxmanager.json not found`** -- file must be in the repo root at the tagged commit
 - **`No release found`** -- create a GitHub Release for the tag first
@@ -304,5 +335,4 @@ Check the bot's comment on your submission issue. Common issues:
 | What | Where | How often |
 | ---- | ----- | --------- |
 | `tbxmanager.json` | Your repo root | Once (update `version` per release) |
-| Create release + zip | GitHub Releases | Each time you publish |
-| Submit issue | tbxmanager-registry | Each time you publish |
+| `tbxmanager publish` | MATLAB command window | Each time you release |

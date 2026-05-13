@@ -1,0 +1,52 @@
+/* ==========================================================================
+   tbxmanager — MATLAB-aligned color theme for MkDocs Material
+   Colors sourced from MathWorks branding and MATLAB default plot palette.
+   ========================================================================== */
+
+/* ---------- Light mode ---------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:             #0076A8;
+  --md-primary-fg-color--light:      #338FB9;
+  --md-primary-fg-color--dark:       #005E85;
+  --md-accent-fg-color:              #D95319;
+  --md-accent-fg-color--transparent: rgba(217, 83, 25, 0.1);
+
+  --md-typeset-a-color:              #0076A8;
+
+  --md-code-bg-color:                #F5F5F5;
+  --md-code-fg-color:                #333333;
+}
+
+/* ---------- Dark mode ---------- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:             #0076A8;
+  --md-primary-fg-color--light:      #4DA8CC;
+  --md-primary-fg-color--dark:       #004C6D;
+  --md-accent-fg-color:              #E8884A;
+  --md-accent-fg-color--transparent: rgba(232, 136, 74, 0.12);
+}
+
+/* ---------- Dark navy header (both modes) ---------- */
+.md-header {
+  background-color: #002B49;
+}
+
+/* Ensure header elements stay readable on dark navy */
+.md-header__topic,
+.md-header__title,
+.md-header-nav__button,
+.md-search__input + .md-search__icon {
+  color: rgba(255, 255, 255, 0.87);
+}
+
+/* ---------- Navigation tabs ---------- */
+.md-tabs {
+  background-color: #003D5C;
+}
+
+/* ---------- Active tab / hover states ---------- */
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: #ffffff;
+  opacity: 1;
+}

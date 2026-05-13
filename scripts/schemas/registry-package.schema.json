@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tbxmanager.com/schema/registry-package.schema.json",
+  "$id": "https://marekwadinger.github.io/tbxmanager/schema/registry-package.schema.json",
   "title": "Registry Package Entry",
   "description": "Schema for packages/[name]/package.json in the tbxmanager-registry repository.",
   "type": "object",

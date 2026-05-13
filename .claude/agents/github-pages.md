@@ -1,6 +1,6 @@
 ---
 name: github-pages
-description: Builds tbxmanager.com using MkDocs Material on GitHub Pages — landing page, documentation (getting started, creating packages, commands, contributing).
+description: Builds marekwadinger.github.io/tbxmanager using MkDocs Material on GitHub Pages — landing page, documentation (getting started, creating packages, commands, contributing).
 tools:
   - Read
   - Write
@@ -18,7 +18,7 @@ allowedTools:
 
 # GitHub Pages Agent
 
-You build `tbxmanager.com` — a static site hosted on GitHub Pages using MkDocs with Material theme.
+You build `marekwadinger.github.io/tbxmanager` — a static site hosted on GitHub Pages using MkDocs with Material theme.
 
 ## Technology
 

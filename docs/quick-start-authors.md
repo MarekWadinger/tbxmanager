@@ -1,10 +1,12 @@
 # Quick Start for Package Authors
 
-Publish your MATLAB toolbox to [tbxmanager](https://tbxmanager.com) in 3 steps. If you don't have tbxmanager yet, see [Getting Started](getting-started.md).
+Publish your MATLAB toolbox to [tbxmanager](https://marekwadinger.github.io/tbxmanager) in minutes.
 
-## Step 1: Add `tbxmanager.json`
+## The Fast Way: `tbxmanager publish`
 
-Run `tbxmanager init` in your project directory to generate the metadata file:
+### 1. Add `tbxmanager.json`
+
+Run `tbxmanager init` in your project directory:
 
 ```matlab
 >> cd my-toolbox
@@ -12,7 +14,7 @@ Run `tbxmanager init` in your project directory to generate the metadata file:
 Created tbxmanager.json
 ```
 
-Then edit the generated `tbxmanager.json` to match your package:
+Edit the generated file to match your package:
 
 ```json
 {
@@ -30,56 +32,43 @@ Then edit the generated `tbxmanager.json` to match your package:
 }
 ```
 
+Set `platforms` to `"all"` for pure MATLAB packages. If you distribute compiled MEX files, use platform-specific keys (`win64`, `maci64`, `maca64`, `glnxa64`) instead.
+
 !!! tip
     You can also create `tbxmanager.json` by hand if you don't have tbxmanager installed yet.
 
-Set `platforms` to `"all"` for pure MATLAB packages. If you distribute compiled MEX files, use platform-specific keys (`win64`, `maci64`, `maca64`, `glnxa64`) instead.
+### 2. Publish
 
-## Step 2: Create a GitHub Release
+```matlab
+>> tbxmanager publish
+```
 
-1. Zip your package (exclude `.git`, tests, docs, etc.)
-1. Tag your version and push:
+That's it. This single command:
 
-    ```bash
-    git tag v1.0.0
-    git push --tags
-    ```
-
-1. Go to your repo on GitHub, click **Releases** > **Create a new release**
-1. Select the tag, add a title, and **attach your zip file** as a release asset
-1. Click **Publish release**
-
-## Step 3: Submit to the Registry
-
-1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues/new/choose)
-1. Click **"Submit Package"**
-1. Fill in your **Repository URL** and **Release tag**
-1. Click **Submit new issue**
-
-That's it! A bot will automatically:
-
-- Fetch your `tbxmanager.json`
-- Download your release archive
-- Compute the SHA256 hash
-- Create a pull request to the registry
+- Builds the archive (respecting your `publish.exclude` patterns)
+- Creates a GitHub release and uploads the archive
+- Computes the SHA256 hash
+- Submits a PR to the registry
 
 Once a maintainer merges the PR, your package is live:
 
 ```matlab
-tbxmanager install my-toolbox
+>> tbxmanager install my-toolbox
 ```
 
-## Updating Your Package
+!!! note "GitHub tokens are only for publishing"
+    You do **not** need a GitHub token to install or use packages — tokens are only required for publishing. A classic Personal Access Token with `public_repo` scope is prompted on first use and saved to `~/.tbxmanager/config.json`. Create one at [github.com/settings/tokens](https://github.com/settings/tokens).
 
-1. Update `version` in `tbxmanager.json`
-1. Create a new release with the updated archive
-1. Submit another issue on the registry (same form)
+### Updating Your Package
+
+1. Bump `version` in `tbxmanager.json`
+2. Run `tbxmanager publish` again
 
 New versions are added alongside existing ones. Users can install specific versions with `tbxmanager install my-toolbox@>=1.1`.
 
-## Optional: Customize What Gets Packaged
+### Customize What Gets Packaged
 
-Add a `publish` section to `tbxmanager.json` to control what goes into the archive:
+Add a `publish` section to `tbxmanager.json`:
 
 ```json
 {
@@ -88,6 +77,49 @@ Add a `publish` section to `tbxmanager.json` to control what goes into the archi
   }
 }
 ```
+
+---
+
+## Manual Steps (Without `tbxmanager publish`)
+
+If you prefer to handle each step yourself, or don't have tbxmanager installed:
+
+### 1. Create a GitHub Release with an Archive
+
+1. Tag your version and push:
+
+    ```bash
+    git tag v1.0.0
+    git push --tags
+    ```
+
+2. Build a zip of your package sources (excluding dev files):
+
+    ```bash
+    zip -r my-toolbox-all.zip . -x '.git/*' -x '.github/*' -x 'tests/*' -x 'docs/*'
+    ```
+
+    See [Building Archives](creating-packages.md#building-archives) for platform-specific packages.
+
+3. Go to your repo on GitHub, click **Releases** > **Create a new release**
+4. Select the tag, add a title, and **upload your zip** as a release asset
+5. Click **Publish release**
+
+!!! warning
+    You must attach an archive file — the registry bot does not use GitHub's auto-generated source downloads.
+
+### 2. Submit via Issue Form
+
+1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues)
+2. Click **"Submit Package"**
+3. Fill in your **Repository URL** and **Release tag**
+4. Click **Submit new issue**
+
+A bot will automatically fetch your `tbxmanager.json`, download the archive, compute SHA256, and create a PR.
+
+### 3. Or Submit Manually via PR
+
+See [Creating Packages — Manual Submission](creating-packages.md#advanced-manual-submission) for the full manual process (fork, create `package.json`, open PR).
 
 ## MEX Packages (Platform-Specific)
 
@@ -100,19 +132,8 @@ If your package includes compiled MEX files, create separate archives per platfo
 
 Attach all of them to your GitHub Release and select the appropriate platform in the submission form.
 
-## Even Faster: `tbxmanager publish`
-
-If you have tbxmanager installed, you can do everything in one command:
-
-```matlab
->> cd my-toolbox
->> tbxmanager publish
-```
-
-This builds the archive, creates the GitHub release, uploads it, and submits to the registry — all automatically. Requires a GitHub token with `public_repo` scope (prompted on first use).
-
 ## Next Steps
 
-- [Case Study](casestudy.md) -- real-world example with RLS_identification
-- [Full metadata reference](creating-packages.md) for all `tbxmanager.json` fields
-- [Commands reference](commands.md) for all tbxmanager CLI commands
+- [Case Study](casestudy.md) — real-world example with RLS_identification
+- [Full metadata reference](creating-packages.md) — all `tbxmanager.json` fields
+- [Commands reference](commands.md) — all tbxmanager CLI commands
