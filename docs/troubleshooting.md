@@ -68,7 +68,7 @@ If you see an error like:
 Failed to fetch index from https://kvasnica.github.io/tbxmanager-registry/index.json: ... 404
 ```
 
-Your `~/.tbxmanager/state/sources.json` contains an outdated registry URL. Update to v2.3.0+ (which auto-migrates) or fix manually:
+Your `~/.tbxmanager/state/sources.json` contains an outdated registry URL. Run `tbxmanager selfupdate` to get the latest version (which auto-migrates), or fix manually:
 
 ```matlab
 tbxmanager source remove https://kvasnica.github.io/tbxmanager-registry/index.json
@@ -84,6 +84,43 @@ tbxmanager info my-toolbox  % check available platforms per version
 ```
 
 Contact the package author to request your platform.
+
+### Wrong platform detected (Apple Silicon)
+
+**Symptom:** You're on an Apple Silicon Mac but tbxmanager installs `maci64` packages instead of `maca64`.
+
+**Explanation:** tbxmanager detects the platform from MATLAB, not your hardware. If you're running Intel MATLAB on Apple Silicon via Rosetta 2, MATLAB reports `maci64` — and that's the correct architecture for your MATLAB installation.
+
+**Check your platform:**
+
+```matlab
+>> computer('arch')
+ans =
+    'maci64'    % Intel MATLAB (even on Apple Silicon)
+    'maca64'    % Native Apple Silicon MATLAB
+```
+
+**Fix:** Install the native Apple Silicon version of MATLAB (R2023b+ supports `maca64`). Until then, `maci64` packages are correct for your setup.
+
+### Permission denied on `savepath`
+
+**Symptom:** `savepath` fails with a permission error during installation.
+
+**Explanation:** MATLAB's default `pathdef.m` is in a system directory that may be read-only (common on shared or university installs).
+
+**Fix:** Create a user-local path file:
+
+```matlab
+savepath(fullfile(userpath, 'pathdef.m'))
+```
+
+Or add tbxmanager to your `startup.m` instead (this is the recommended approach):
+
+```matlab
+% In startup.m:
+addpath('/path/to/tbxmanager.m')
+tbxmanager restorepath
+```
 
 ### SHA256 verification failed during install
 

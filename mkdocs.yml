@@ -1,5 +1,5 @@
 site_name: tbxmanager
-site_url: https://marekwadinger.github.io/tbxmanager
+site_url: https://tbxmanager.com
 site_description: The MATLAB Package Manager
 repo_url: https://github.com/MarekWadinger/tbxmanager
 repo_name: MarekWadinger/tbxmanager
@@ -35,6 +35,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Concepts: concepts.md
   - Commands: commands.md
   - For Package Authors:
     - Quick Start: quick-start-authors.md
