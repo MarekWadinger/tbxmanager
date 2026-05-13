@@ -1524,7 +1524,7 @@ function tbx_installSinglePackage(pkg, cacheDir)
     isSingleFile = any(cacheExt == [".m", ".p"]);
     if isSingleFile
         tbx_printf("  Copying single-file package...\n");
-        copyfile(char(cacheFile), fullfile(char(destDir), cacheBase + cacheExt));
+        copyfile(char(cacheFile), fullfile(char(destDir), [cacheBase, cacheExt]));
     else
         tbx_printf("  Extracting...\n");
         tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
