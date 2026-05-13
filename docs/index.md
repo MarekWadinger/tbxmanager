@@ -21,37 +21,37 @@ savepath
 
 <div class="grid cards" markdown>
 
--   :material-download:{ .lg .middle } **One-Line Install**
+- :material-download:{ .lg .middle } **One-Line Install**
 
     ---
 
     Download a single file and you're ready. No compilation, no prerequisites beyond MATLAB R2022a+.
 
--   :material-source-branch:{ .lg .middle } **Dependency Resolution**
+- :material-source-branch:{ .lg .middle } **Dependency Resolution**
 
     ---
 
     Automatically resolves and installs transitive dependencies with version constraint satisfaction.
 
--   :material-lock:{ .lg .middle } **Reproducible Environments**
+- :material-lock:{ .lg .middle } **Reproducible Environments**
 
     ---
 
     Lock exact versions with `tbxmanager lock`. Share `tbxmanager.lock` for identical setups across machines.
 
--   :material-account-group:{ .lg .middle } **Community Registry**
+- :material-account-group:{ .lg .middle } **Community Registry**
 
     ---
 
     Open package registry. Anyone can contribute packages via pull request or `tbxmanager publish`. CI validates every submission.
 
--   :material-monitor:{ .lg .middle } **Cross-Platform**
+- :material-monitor:{ .lg .middle } **Cross-Platform**
 
     ---
 
     Windows, macOS (Intel & Apple Silicon), and Linux. Platform-specific packages resolved automatically.
 
--   :material-shield-check:{ .lg .middle } **Integrity Verification**
+- :material-shield-check:{ .lg .middle } **Integrity Verification**
 
     ---
 
@@ -144,4 +144,4 @@ mpt@3.2.1
 !!! tip "Command abbreviations"
     Commands can be abbreviated to their unique prefix: `tbx inst mpt` works like `tbx install mpt`.
 
-[Get Started :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
+[Dive In :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
