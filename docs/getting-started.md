@@ -14,89 +14,105 @@ tbxmanager
 savepath
 ```
 
-This downloads the package manager, initializes its storage directory (`~/.tbxmanager/`), and saves the MATLAB path.
+That's it -- one file, no compilation, no admin rights. This downloads the package manager, sets up its storage directory (`~/.tbxmanager/`), and saves the MATLAB path so it persists between sessions.
 
 <!-- markdownlint-disable MD046 -->
+
 !!! tip "Auto-restore on startup"
     Add this line to your `startup.m` so installed packages are available every time MATLAB starts:
 
-    ```matlab
-    tbxmanager restorepath
-    ```
+          ```matlab
+          tbxmanager restorepath
+          ```
 
     To find or create your `startup.m`:
 
-    ```matlab
-    edit(fullfile(userpath, 'startup.m'))
-    ```
+          ```matlab
+          edit(fullfile(userpath, 'startup.m'))
+          ```
+
 <!-- markdownlint-enable MD046 -->
 
-## Install Your First Package
+## Install your first package
+
+Let's install [MPT3](http://control.ee.ethz.ch/~mpt/) -- the Multi-Parametric Toolbox, a popular control systems library with 10 dependencies. With tbxmanager, it's one command:
 
 ```matlab
->> tbxmanager install oasesmex --yes
+>> tbx install mpt --yes
 Resolving dependencies...
 
 Installation plan:
+  + yalmip@R20250626_fix2 (all)
+  + sedumi@1.3 (maca64)
+  + lcp@1.0.3 (maca64)
+  + cddmex@1.0.1 (maca64)
+  + glpkmex@1.0 (maca64)
+  + clpmex@1.0 (maca64)
+  + espresso@1.0 (maca64)
+  + hysdel@2.0.6 (maca64)
   + oasesmex@3.2.0 (maca64)
+  + qpspline@1.0 (all)
+  + mpt@3.2.1 (all)
 
-Installing oasesmex@3.2.0 ...
-  Downloading...
-  Verifying SHA256...
-  Extracting...
-  Enabled oasesmex@3.2.0.
-
-Done in 1.2s. 1 package(s) installed.
+Done in 8.2s. 11 package(s) installed.
 ```
 
-tbxmanager resolves dependencies, downloads archives, verifies SHA256 integrity, and adds everything to your MATLAB path. Use the `--yes` flag to skip the confirmation prompt.
+tbxmanager resolved all 10 dependencies, downloaded the correct platform-specific archives (notice `maca64` for Apple Silicon), verified their SHA256 integrity, and added everything to your MATLAB path. The `--yes` flag skips the confirmation prompt.
 
 <!-- markdownlint-disable MD046 -->
-!!! tip "Command shorthand"
-    All commands can be abbreviated to their unique prefix. The `tbx` alias also works:
+
+!!! tip "Use `tbx` instead of `tbxmanager`"
+    The `tbx` shorthand is created automatically during setup. All examples on this page use it.
+
+    Commands can also be abbreviated to their unique prefix:
 
     | You type | Same as |
     | -------- | ------- |
-    | `tbx inst mpt` | `tbxmanager install mpt` |
-    | `tbx up` | `tbxmanager update` |
-    | `tbx ls` | `tbxmanager list` |
-    | `tbx se toolbox` | `tbxmanager search toolbox` |
+    | `tbx inst mpt` | `tbx install mpt` |
+    | `tbx up` | `tbx update` |
+    | `tbx ls` | `tbx list` |
+    | `tbx se mpt` | `tbx search mpt` |
+
 <!-- markdownlint-enable MD046 -->
 
 ### Version constraints
 
-Pin versions when installing:
+Need a specific version? Pin it when installing:
 
 ```matlab
-tbxmanager install mpt@>=3.0        % minimum version
-tbxmanager install lcp@==1.0.3      % exact version
-tbxmanager install mpt@~=3.2        % compatible release (>=3.2, <4.0)
-tbxmanager install mpt@>=3.0,<4.0   % range (comma = AND)
+tbx install mpt@>=3.0        % minimum version
+tbx install lcp@==1.0.3      % exact version
+tbx install mpt@~=3.2        % compatible release (>=3.2, <4.0)
+tbx install mpt@>=3.0,<4.0   % range (comma = AND)
 ```
 
-## Search for Packages
+## Discover packages
+
+Find what's available in the registry:
 
 ```matlab
->> tbxmanager search toolbox
-Found 3 package(s):
+>> tbx search mpt
+Found 5 package(s):
 
-Name    Latest       Description
----------------------------------------------------------------
-brcm    v0.96(Beta)  The Building Resistance-Capacitance ...
-mpt     3.2.1        Multi-Parametric Toolbox 3.0
-mptdoc  3.0.4        Multi-Parametric Toolbox documentation
+Name        Latest     Description
+----------------------------------------------------------------------
+mpt         3.2.1      Multi-Parametric Toolbox 3.0
+mpt2        2.6.3      MPT2
+mpt3lowcom  1.0.3      Low-complexity control design module for MPT3
+mptdoc      3.0.4      Multi-Parametric Toolbox documentation
+mptplus     R20260508  mptplus
 ```
 
-## Inspect a Package
+Want to know more about a package before installing? Use `info`:
 
 ```matlab
->> tbxmanager info mpt
+>> tbx info mpt
 Package: mpt
 Description: Multi-Parametric Toolbox 3.0
 Homepage: http://control.ee.ethz.ch/~mpt/
 Authors: mpt@control.ee.ethz.ch
 Latest version: 3.2.1
-Not installed.
+Installed version: 3.2.1
 
 Available versions:
   3.2.1 (released: 2018-06-07) [matlab: >=R2014a]
@@ -107,97 +123,112 @@ Available versions:
     platforms: all
 ```
 
-## List Installed Packages
+## See what you have
+
+Check which packages are installed and whether updates are available:
 
 ```matlab
->> tbxmanager list
+>> tbx list
 Name      Version         Latest          Status
-----------------------------------------------------
-cddmex    1.0.1           1.0.1           disabled
-lcp       1.0.3           1.0.3           disabled
-oasesmex  3.2.0           3.2.0           disabled
-sedumi    1.3             1.3             disabled
-yalmip    R20250626_fix2  R20250626_fix2  disabled
+---------------------------------------------------
+cddmex    1.0.1           1.0.1           enabled
+clpmex    1.0             1.0             enabled
+espresso  1.0             1.0             enabled
+glpkmex   1.0             1.0             enabled
+hysdel    2.0.6           2.0.6           enabled
+lcp       1.0.3           1.0.3           enabled
+mpt       3.2.1           3.2.1           enabled
+oasesmex  3.2.0           3.2.0           enabled
+qpspline  1.0             1.0             enabled
+sedumi    1.3             1.3             enabled
+yalmip    R20250626_fix2  R20250626_fix2  enabled
 ```
 
-## Dependency Tree
+Visualize the dependency tree to understand how packages relate:
 
 ```matlab
->> tbxmanager tree
-mpt2@2.6.3
-+-- yalmip@R20250626_fix2
-+-- sedumi@1.3
-+-- lcp@1.0.3
-+-- cddmex@1.0.1
-+-- glpkmex@1.0
-+-- clpmex@1.0
-+-- espresso@1.0
-\-- hysdel@2.0.6
-oasesmex@3.2.0
+>> tbx tree
+mpt@3.2.1
+├── yalmip@R20250626_fix2
+├── sedumi@1.3
+├── lcp@1.0.3
+├── cddmex@1.0.1
+├── glpkmex@1.0
+├── clpmex@1.0
+├── espresso@1.0
+├── hysdel@2.0.6
+├── oasesmex@3.2.0
+└── qpspline@1.0
 ```
 
-## Update Packages
+## Keep packages up to date
+
+Update all installed packages to their latest versions:
 
 ```matlab
->> tbxmanager update
+>> tbx update
   cddmex: 1.0.1 (up to date)
+  clpmex: 1.0 (up to date)
+  espresso: 1.0 (up to date)
+  glpkmex: 1.0 (up to date)
+  hysdel: 2.0.6 (up to date)
   lcp: 1.0.3 (up to date)
+  mpt: 3.2.1 (up to date)
   oasesmex: 3.2.0 (up to date)
+  qpspline: 1.0 (up to date)
   sedumi: 1.3 (up to date)
   yalmip: R20250626_fix2 (up to date)
 All packages are up to date.
 ```
 
-Update a specific package:
-
-```matlab
-tbxmanager update mpt
-```
+Or update a specific package: `tbx update mpt`
 
 ## Uninstall
 
 ```matlab
-tbxmanager uninstall oasesmex
+>> tbx uninstall oasesmex --yes
+Warning: Package 'oasesmex' is required by: mpt
+Uninstalled oasesmex@3.2.0.
 ```
 
-tbxmanager warns you if other installed packages depend on the one being removed.
+tbxmanager warns you when other packages depend on the one being removed, so you can reconsider before breaking your setup (well, if you do not append that --yes flag).
 
 ---
 
-## Project Dependencies
+## Project dependencies
 
-For reproducible, shareable environments, use a project file instead of global installs.
+The commands above manage **global** packages -- available in every MATLAB session. For **reproducible, shareable** research environments, use a project file instead. This is similar to `requirements.txt` / `pyproject.toml` in Python or `package.json` in JavaScript.
 
 ### Initialize a project
 
 ```matlab
->> tbxmanager init
+>> tbx init
 Created /home/user/my-project/tbxmanager.json
 Disabling 2 global package(s) for project isolation.
-Fill in 'description' and 'platforms' URLs, then run 'tbxmanager add <pkg>'.
-Use 'tbxmanager restorepath' to re-enable global packages when done.
+Fill in 'description' and 'platforms' URLs, then run 'tbx add <pkg>'.
+Use 'tbx restorepath' to re-enable global packages when done.
 ```
 
-This creates a `tbxmanager.json` in the current directory and disables global packages to keep the project environment isolated.
+This creates a `tbxmanager.json` manifest in the current directory and disables global packages to keep the project environment isolated.
 
 ### Add dependencies
 
 ```matlab
->> tbxmanager add lcp --yes
+>> tbx add lcp --yes
   + lcp@>=1.0.3
 Done in 0.8s.
 
->> tbxmanager add sedumi --yes
+>> tbx add sedumi --yes
   + sedumi@>=1.3
 Done in 0.5s.
 ```
 
-`add` updates `tbxmanager.json`, regenerates the lock file, and syncs -- all in one step.
+`add` updates `tbxmanager.json`, regenerates the lock file, and syncs the environment -- all in one step.
 
 ### Remove dependencies
 
 ```matlab
->> tbxmanager remove sedumi
+>> tbx remove sedumi
   - sedumi removed from tbxmanager.json
 Done in 0.4s.
 ```
@@ -221,10 +252,12 @@ After `init` and `add`, your `tbxmanager.json` looks like this:
 }
 ```
 
-### Generate the lock file
+### Lock: pin exact versions
+
+Generate a lock file that records the exact resolved versions and SHA256 hashes:
 
 ```matlab
->> tbxmanager lock
+>> tbx lock
 Generating lock file from /home/user/my-project/tbxmanager.json ...
 Lock file written to /home/user/my-project/tbxmanager.lock
 
@@ -232,7 +265,7 @@ Resolved packages:
   lcp@1.0.3
 ```
 
-The lock file pins every dependency (including transitive ones) to an exact version and SHA256 hash:
+The lock file captures everything needed to reproduce your environment:
 
 ```json
 {
@@ -256,57 +289,56 @@ The lock file pins every dependency (including transitive ones) to an exact vers
 ```
 
 !!! note
-    The lock file is auto-generated by `tbxmanager lock` — never edit it by hand. Commit `tbxmanager.lock` to version control so collaborators get identical package versions.
+    The lock file is auto-generated -- never edit it by hand. Commit `tbxmanager.lock` to version control so collaborators get identical package versions.
 
 ### Sync: reproduce the environment
 
-When a collaborator clones the project:
+When a collaborator clones your project, one command installs everything:
 
 ```matlab
->> tbxmanager sync
+>> tbx sync
 Syncing from /home/user/my-project/tbxmanager.lock ...
 Everything is up to date.
 ```
 
-`sync` installs the exact versions from `tbxmanager.lock`, verifying SHA256 integrity.
+`sync` installs the exact versions from `tbxmanager.lock`, verifying SHA256 integrity. Everyone gets the same packages, every time.
 
 ### Verify consistency
 
+Check that your installed packages match the lock file:
+
 ```matlab
->> tbxmanager check
+>> tbx check
   ✓ lcp@1.0.3
 ```
 
-`check` compares installed packages against the lock file without making changes:
-
-- `✓` -- matches lock
-- `✗` -- version mismatch
-- `!` -- missing or extra package
-
-Run `tbxmanager sync` to fix any discrepancies.
+Symbols: `✓` matches lock, `✗` version mismatch, `!` missing or extra package. Run `tbx sync` to fix any discrepancies.
 
 ---
 
-## Self-Update
+## Self-update
 
 Keep tbxmanager itself up to date:
 
 ```matlab
-tbxmanager selfupdate
+tbx selfupdate
 ```
 
-## Use in Scripts
+## Use in scripts
 
 Add `require` at the top of any MATLAB script to declare its package dependencies:
 
 ```matlab
-tbxmanager require mpt@>=3.0 sedumi
+tbx require mpt@>=3.0 sedumi
 ```
 
-If any package is missing or the wrong version, MATLAB throws a clear error before your code runs. See the [require command reference](commands.md#require) for more examples.
+If any package is missing or the wrong version, MATLAB throws a clear error before your code runs. This makes scripts self-documenting -- anyone reading the file immediately sees what it needs. See the [require command reference](commands.md#require) for more examples.
 
-## Next Steps
+## Next steps
 
+- [Concepts](concepts.md) -- how tbxmanager works under the hood
 - [Command Reference](commands.md) -- all commands with full syntax
 - [Quick Start for Authors](quick-start-authors.md) -- publish your own package
 - [Troubleshooting](troubleshooting.md) -- common issues and solutions
+
+<!-- test -->
