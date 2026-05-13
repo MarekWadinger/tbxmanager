@@ -9,7 +9,7 @@
 Run these three lines in the MATLAB Command Window:
 
 ```matlab
-websave('tbxmanager.m', 'https://tbxmanager.com/tbxmanager.m');
+websave('tbxmanager.m', 'https://marekwadinger.github.io/tbxmanager/tbxmanager.m');
 tbxmanager
 savepath
 ```

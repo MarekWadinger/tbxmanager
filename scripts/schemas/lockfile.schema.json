@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tbxmanager.com/schema/lockfile.schema.json",
+  "$id": "https://marekwadinger.github.io/tbxmanager/schema/lockfile.schema.json",
   "title": "tbxmanager Lockfile",
   "description": "Schema for tbxmanager.lock — pins exact resolved versions for reproducible environments.",
   "type": "object",

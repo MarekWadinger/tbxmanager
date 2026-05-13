@@ -345,7 +345,7 @@ function cfg = tbx_config()
         cfg = struct();
         cfg.auto_enable = true;
         cfg.confirm_install = true;
-        cfg.selfupdate_url = "https://tbxmanager.com/tbxmanager.m";
+        cfg.selfupdate_url = "https://marekwadinger.github.io/tbxmanager/tbxmanager.m";
         tbx_writeJson(cfgFile, cfg);
     end
 end
@@ -2318,7 +2318,7 @@ function main_selfupdate(~)
     if isfield(cfg, "selfupdate_url")
         url = string(cfg.selfupdate_url);
     else
-        url = "https://tbxmanager.com/tbxmanager.m";
+        url = "https://marekwadinger.github.io/tbxmanager/tbxmanager.m";
     end
 
     tbx_printf("Checking for updates from %s ...\n", url);

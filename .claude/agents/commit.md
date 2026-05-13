@@ -49,7 +49,7 @@ You draft commits following the [Conventional Commits](https://www.conventionalc
 | `client` | tbxmanager.m MATLAB client |
 | `registry` | tbxmanager-registry repo / CI |
 | `schema` | JSON schemas |
-| `site` | tbxmanager.com website |
+| `site` | GitHub Pages website |
 | `migration` | Old system → new migration |
 | `agents` | .claude/agents/ files |
 | `tests` | Test infrastructure |

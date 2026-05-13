@@ -1,6 +1,11 @@
 MATLAB ?= /Applications/MATLAB_R2025b.app/bin/matlab
 
-.PHONY: help install dev docs docs-build lint validate migrate test test-matlab test-matlab-verbose matlab-repl clean
+# ── Single source of truth for project URLs ──────────
+# Change these when you get a custom domain, then run: make update-urls
+SITE_URL  := https://marekwadinger.github.io/tbxmanager
+REGISTRY_URL := https://marekwadinger.github.io/tbxmanager-registry
+
+.PHONY: help install dev docs docs-build lint validate migrate test test-matlab test-matlab-verbose matlab-repl clean update-urls check-links check-links-fast
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,7 +24,7 @@ matlab-cli: ## Open interactive MATLAB CLI with tbxmanager on path
 docs: ## Serve docs locally (http://127.0.0.1:8000)
 	uv run mkdocs serve
 
-docs-build: ## Build docs to site/
+docs-build: check-links-fast ## Build docs to site/
 	cp tbxmanager.m docs/tbxmanager.m
 	uv run mkdocs build --strict
 	rm -f docs/tbxmanager.m
@@ -71,6 +76,45 @@ test-matlab-debug: ## Dump sources.json bytes for debugging install tests
 	$(MATLAB) -batch "setenv('TBXMANAGER_HOME', fullfile(tempdir,'tbx_debug')); tbxmanager help; sf=fullfile(getenv('TBXMANAGER_HOME'),'state','sources.json'); raw=fileread(sf); fprintf('len=%d bytes: ',numel(raw)); fprintf('%d ',uint8(raw(1:min(80,numel(raw))))); fprintf('\ncontent: >>%s<<\n',raw); jsondecode(raw); disp('jsondecode OK'); rmdir(fullfile(tempdir,'tbx_debug'),'s');"
 
 test-all: test test-matlab ## Run everything (lint + validate + MATLAB)
+
+# ── Link Checking ────────────────────────────────────
+
+check-links: ## Check all links in markdown files (internal + external)
+	uv run python scripts/check_links.py
+
+check-links-fast: ## Check internal cross-references only (no network)
+	uv run python scripts/check_links.py --no-external
+
+# ── URL Management ───────────────────────────────────
+
+# Files managed by update-urls (excludes legacy registry data)
+URL_FILES := README.md CITATION.cff CLAUDE.md mkdocs.yml \
+	tbxmanager.m \
+	docs/index.md docs/getting-started.md docs/commands.md \
+	scripts/schemas/lockfile.schema.json \
+	scripts/schemas/registry-package.schema.json \
+	scripts/schemas/index.schema.json \
+	scripts/schemas/tbxmanager-package.schema.json \
+	tbxmanager-registry/README.md \
+	tbxmanager-registry/.github/ISSUE_TEMPLATE/submit-package.yml \
+	tbxmanager-registry/scripts/process_submission.py \
+	.claude/agents/matlab-client.md \
+	.claude/agents/github-pages.md
+
+update-urls: ## Propagate SITE_URL and REGISTRY_URL to all project files
+	@echo "SITE_URL     = $(SITE_URL)"
+	@echo "REGISTRY_URL = $(REGISTRY_URL)"
+	@for f in $(URL_FILES); do \
+		if [ -f "$$f" ]; then \
+			sed -i '' \
+				-e 's|https://marekwadinger\.github\.io/tbxmanager|$(SITE_URL)|g' \
+				-e 's|https://tbxmanager\.com|$(SITE_URL)|g' \
+				-e 's|https://marekwadinger\.github\.io/tbxmanager-registry|$(REGISTRY_URL)|g' \
+				"$$f"; \
+			echo "  updated $$f"; \
+		fi; \
+	done
+	@echo "Done. Review changes with: git diff"
 
 # ── Clean ─────────────────────────────────────────────
 

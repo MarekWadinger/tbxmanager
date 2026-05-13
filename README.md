@@ -30,7 +30,7 @@
 ## Installation
 
 ```matlab
-websave('tbxmanager.m', 'https://tbxmanager.com/tbxmanager.m');
+websave('tbxmanager.m', 'https://marekwadinger.github.io/tbxmanager/tbxmanager.m');
 tbxmanager
 savepath
 ```
@@ -41,7 +41,7 @@ Add to your `startup.m` for automatic path restoration:
 tbxmanager restorepath
 ```
 
-See the [installation guide](https://tbxmanager.com/getting-started) for details.
+See the [installation guide](https://marekwadinger.github.io/tbxmanager/getting-started) for details.
 
 ## Projects
 
@@ -87,7 +87,7 @@ Installing/updating 3 package(s):
 Sync complete in 5.3s.
 ```
 
-See the [project documentation](https://tbxmanager.com/getting-started) to get started.
+See the [project documentation](https://marekwadinger.github.io/tbxmanager/getting-started) to get started.
 
 ## Global packages
 
@@ -121,7 +121,7 @@ Uninstalled lcp@1.2.0.
 
 > **Note:** `install`/`uninstall` modify the global package store. In a project with `tbxmanager.json`, prefer `add`/`remove` -- they keep the manifest and lockfile in sync and won't affect packages used by other projects.
 
-See the [command reference](https://tbxmanager.com/commands) for all options.
+See the [command reference](https://marekwadinger.github.io/tbxmanager/commands) for all options.
 
 ## Publishing packages
 
@@ -132,20 +132,20 @@ Publish your own MATLAB toolbox to the community registry:
 >> tbxmanager publish        % validates and submits to the registry
 ```
 
-Or [submit manually](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) via the registry issue form. See the [Quick Start for Authors](https://tbxmanager.com/quick-start-authors) for the full guide.
+Or [submit manually](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) via the registry issue form. See the [Quick Start for Authors](https://marekwadinger.github.io/tbxmanager/quick-start-authors) for the full guide.
 
 ## Documentation
 
-Full documentation at [tbxmanager.com](https://tbxmanager.com):
+Full documentation at [marekwadinger.github.io/tbxmanager](https://marekwadinger.github.io/tbxmanager):
 
-- [Getting Started](https://tbxmanager.com/getting-started)
-- [Command Reference](https://tbxmanager.com/commands)
-- [Creating Packages](https://tbxmanager.com/quick-start-authors)
-- [Troubleshooting](https://tbxmanager.com/troubleshooting)
+- [Getting Started](https://marekwadinger.github.io/tbxmanager/getting-started)
+- [Command Reference](https://marekwadinger.github.io/tbxmanager/commands)
+- [Creating Packages](https://marekwadinger.github.io/tbxmanager/quick-start-authors)
+- [Troubleshooting](https://marekwadinger.github.io/tbxmanager/troubleshooting)
 
 ## Contributing
 
-[Submit packages](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) to the registry, or contribute to the client by opening a PR to the `dev` branch. See the [contributing guide](https://tbxmanager.com/contributing).
+[Submit packages](https://github.com/MarekWadinger/tbxmanager-registry/issues/new?template=submit-package.yml) to the registry, or contribute to the client by opening a PR to the `dev` branch. See the [contributing guide](https://marekwadinger.github.io/tbxmanager/contributing).
 
 ## Acknowledgements
 
