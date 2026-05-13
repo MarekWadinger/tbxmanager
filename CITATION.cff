@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: tbxmanager
+message: >-
+  If you use tbxmanager, please cite the original
+  Multi-Parametric Toolbox 3.0 paper and this software.
+type: software
+license: MIT
+repository-code: https://github.com/MarekWadinger/tbxmanager
+url: https://tbxmanager.com
+authors:
+  - family-names: Wadinger
+    given-names: Marek
+    orcid: https://orcid.org/0009-0007-4223-5795
+references:
+  - type: article
+    title: "Multi-Parametric Toolbox 3.0"
+    authors:
+      - family-names: Herceg
+        given-names: Martin
+      - family-names: Kvasnica
+        given-names: Michal
+      - family-names: Jones
+        given-names: Colin N.
+      - family-names: Morari
+        given-names: Manfred
+    year: 2013
+    journal: "Proceedings of the European Control Conference"
+    url: https://people.ee.ethz.ch/~mpt/3/
+    notes: >-
+      tbxmanager was originally developed as the package manager
+      for the Multi-Parametric Toolbox (MPT).
