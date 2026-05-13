@@ -40,28 +40,28 @@ The generated `tbxmanager.json` looks like this (customize the fields for your p
 
 ### Fields
 
-| Field | Required | Description |
-| ----- | -------- | ----------- |
-| `name` | Yes | Lowercase, alphanumeric, hyphens, underscores |
-| `version` | Yes | Semver: `MAJOR.MINOR.PATCH` |
-| `description` | Yes | Short description (max 200 chars) |
-| `platforms` | Yes | At least one platform with download URL |
-| `homepage` | No | Project URL |
-| `license` | No | SPDX identifier (MIT, GPL-3.0, BSD-3-Clause, etc.) |
-| `authors` | No | List of `"Name <email>"` strings |
-| `matlab` | No | MATLAB version constraint (e.g., `>=R2022a`) |
-| `dependencies` | No | Map of package names to version constraints |
-| `publish` | No | Publishing config (see below) |
+| Field          | Required | Description                                        |
+| -------------- | -------- | -------------------------------------------------- |
+| `name`         | Yes      | Lowercase, alphanumeric, hyphens, underscores      |
+| `version`      | Yes      | Semver: `MAJOR.MINOR.PATCH`                        |
+| `description`  | Yes      | Short description (max 200 chars)                  |
+| `platforms`    | Yes      | At least one platform with download URL            |
+| `homepage`     | No       | Project URL                                        |
+| `license`      | No       | SPDX identifier (MIT, GPL-3.0, BSD-3-Clause, etc.) |
+| `authors`      | No       | List of `"Name <email>"` strings                   |
+| `matlab`       | No       | MATLAB version constraint (e.g., `>=R2022a`)       |
+| `dependencies` | No       | Map of package names to version constraints        |
+| `publish`      | No       | Publishing config (see below)                      |
 
 ### Platforms
 
-| Platform | Description |
-| -------- | ----------- |
-| `all` | Pure MATLAB code (no MEX files) |
-| `win64` | Windows 64-bit |
-| `maci64` | macOS Intel |
-| `maca64` | macOS Apple Silicon |
-| `glnxa64` | Linux 64-bit |
+| Platform  | Description                     |
+| --------- | ------------------------------- |
+| `all`     | Pure MATLAB code (no MEX files) |
+| `win64`   | Windows 64-bit                  |
+| `maci64`  | macOS Intel                     |
+| `maca64`  | macOS Apple Silicon             |
+| `glnxa64` | Linux 64-bit                    |
 
 Use `all` if your package is pure MATLAB. Provide platform-specific archives if you include MEX files.
 
@@ -78,10 +78,10 @@ Optional section for the automated publish action:
 }
 ```
 
-| Field | Default | Description |
-| ----- | ------- | ----------- |
-| `exclude` | `.git`, `.github`, `tests`, `docs`, `tbxmanager.json` | Patterns to exclude from auto-built archives |
-| `archive_dir` | `dist` | Directory for pre-built platform archives |
+| Field         | Default                                               | Description                                  |
+| ------------- | ----------------------------------------------------- | -------------------------------------------- |
+| `exclude`     | `.git`, `.github`, `tests`, `docs`, `tbxmanager.json` | Patterns to exclude from auto-built archives |
+| `archive_dir` | `dist`                                                | Directory for pre-built platform archives    |
 
 ## Versioning
 
@@ -172,44 +172,33 @@ The registry requires SHA256 hashes for integrity verification:
     Get-FileHash my-toolbox-all.zip -Algorithm SHA256
     ```
 
-!!! tip
-    If you've cloned the [tbxmanager repo](https://github.com/MarekWadinger/tbxmanager) for development, you can use the converter script to generate the registry format:
-    ```bash
-    python scripts/convert_to_registry.py \
-      --input tbxmanager.json \
-      --output packages/my-toolbox/package.json \
-      --sha256 all=abc123... \
-      --released 2026-03-28
-    ```
-    This script lives in the tbxmanager repo, not in your package repo.
-
 ### Submitting to the Registry
 
 1. Fork [MarekWadinger/tbxmanager-registry](https://github.com/MarekWadinger/tbxmanager-registry)
-2. Create `packages/my-toolbox/package.json`:
+1. Create `packages/my-toolbox/package.json`:
 
-```json
-{
-  "name": "my-toolbox",
-  "description": "A useful MATLAB toolbox",
-  "homepage": "https://github.com/you/my-toolbox",
-  "license": "MIT",
-  "authors": ["Your Name <your@email.com>"],
-  "versions": {
-    "1.0.0": {
-      "matlab": ">=R2022a",
-      "dependencies": {},
-      "platforms": {
-        "all": {
-          "url": "https://github.com/you/my-toolbox/releases/download/v1.0.0/my-toolbox-all.zip",
-          "sha256": "your-sha256-hash-here"
+    ```json
+    {
+      "name": "my-toolbox",
+      "description": "A useful MATLAB toolbox",
+      "homepage": "https://github.com/you/my-toolbox",
+      "license": "MIT",
+      "authors": ["Your Name <your@email.com>"],
+      "versions": {
+        "1.0.0": {
+          "matlab": ">=R2022a",
+          "dependencies": {},
+          "platforms": {
+            "all": {
+              "url": "https://github.com/you/my-toolbox/releases/download/v1.0.0/my-toolbox-all.zip",
+              "sha256": "your-sha256-hash-here"
+            }
+          },
+          "released": "2026-03-25"
         }
-      },
-      "released": "2026-03-25"
+      }
     }
-  }
-}
-```
+    ```
 
 1. Open a pull request
 1. CI automatically validates your submission
@@ -223,6 +212,6 @@ To add a new version, edit your `package.json` in the registry with a new versio
 
 ## Next Steps
 
-- [Quick Start for Authors](quick-start-authors.md) -- the fastest path to publishing
-- [Case Study](casestudy.md) -- real-world example with RLS_identification
-- [Contributing](contributing.md) -- how to contribute to the registry or client
+- [Quick Start for Authors](quick-start-authors.md) — the fastest path to publishing
+- [Case Study](casestudy.md) — real-world example with RLS_identification
+- [Contributing](contributing.md) — help develop tbxmanager itself
