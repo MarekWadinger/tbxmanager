@@ -1,6 +1,6 @@
 # Quick Start for Package Authors
 
-Publish your MATLAB toolbox to [tbxmanager](https://tbxmanager.com) in 3 steps. If you don't have tbxmanager yet, see [Getting Started](getting-started.md).
+Publish your MATLAB toolbox to tbxmanager in 3 steps. If you don't have tbxmanager yet, see [Getting Started](getting-started.md).
 
 ## Step 1: Add `tbxmanager.json`
 

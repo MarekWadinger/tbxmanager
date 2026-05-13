@@ -5,7 +5,7 @@
 tbxmanager is a SOTA MATLAB package manager inspired by `uv` (Python). It consists of:
 
 - **`tbxmanager.m`** — Single-file MATLAB client (all code in one file as local functions)
-- **GitHub Pages site** (`docs/`) — Landing page, docs, package browser at tbxmanager.com
+- **GitHub Pages site** (`docs/`) — Landing page, docs, package browser at marekwadinger.github.io/tbxmanager
 - **CI/CD** (`.github/workflows/`) — Tests, site deployment, releases
 - **Registry** (separate repo: `MarekWadinger/tbxmanager-registry`) — Community package index
 
@@ -25,7 +25,7 @@ tbxmanager is a SOTA MATLAB package manager inspired by `uv` (Python). It consis
 All MATLAB code lives in `tbxmanager.m` as local functions. This enables the one-line install:
 
 ```matlab
-websave('tbxmanager.m','https://tbxmanager.com/tbxmanager.m'); tbxmanager; savepath
+websave('tbxmanager.m','https://marekwadinger.github.io/tbxmanager/tbxmanager.m'); tbxmanager; savepath
 ```
 
 ### Naming Conventions

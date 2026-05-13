@@ -6,7 +6,7 @@ This guide walks through a real example of publishing an existing MATLAB reposit
 
 You need:
 
-- [tbxmanager](https://tbxmanager.com) installed in MATLAB (see [Getting Started](getting-started.md))
+- tbxmanager installed in MATLAB (see [Getting Started](getting-started.md))
 - A GitHub repository with your MATLAB code
 - A GitHub account
 - 10 minutes

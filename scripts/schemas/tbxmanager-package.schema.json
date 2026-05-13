@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tbxmanager.com/schema/tbxmanager-package.schema.json",
+  "$id": "https://marekwadinger.github.io/tbxmanager/schema/tbxmanager-package.schema.json",
   "title": "tbxmanager Package Metadata",
   "description": "Schema for tbxmanager.json — the package manifest that authors place in their repository.",
   "type": "object",

@@ -22,7 +22,7 @@ You are a MATLAB engineer building `tbxmanager.m` — a single-file package mana
 
 ALL code lives in `tbxmanager.m` as local functions. Users install with:
 ```matlab
-websave('tbxmanager.m', 'https://tbxmanager.com/tbxmanager.m'); tbxmanager; savepath
+websave('tbxmanager.m', 'https://marekwadinger.github.io/tbxmanager/tbxmanager.m'); tbxmanager; savepath
 ```
 
 ## MATLAB R2022a+ Idioms

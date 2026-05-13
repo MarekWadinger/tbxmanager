@@ -6,11 +6,16 @@ message: >-
 type: software
 license: MIT
 repository-code: https://github.com/MarekWadinger/tbxmanager
-url: https://tbxmanager.com
+url: https://marekwadinger.github.io/tbxmanager
 authors:
-  - family-names: Wadinger
-    given-names: Marek
-    orcid: https://orcid.org/0009-0007-4223-5795
+  - family-names: Herceg
+    given-names: Martin
+  - family-names: Kvasnica
+    given-names: Michal
+  - family-names: Jones
+    given-names: Colin N.
+  - family-names: Morari
+    given-names: Manfred
 references:
   - type: article
     title: "Multi-Parametric Toolbox 3.0"

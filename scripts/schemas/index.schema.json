@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tbxmanager.com/schema/index.schema.json",
+  "$id": "https://marekwadinger.github.io/tbxmanager/schema/index.schema.json",
   "title": "Registry Index",
   "description": "Schema for the combined index.json served to tbxmanager clients.",
   "type": "object",

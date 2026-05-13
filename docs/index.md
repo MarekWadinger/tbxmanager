@@ -9,7 +9,7 @@ hide:
 **A modern package manager for MATLAB** with dependency resolution, lockfiles, and a community registry.
 
 ```matlab
-websave('tbxmanager.m', 'https://tbxmanager.com/tbxmanager.m');
+websave('tbxmanager.m', 'https://marekwadinger.github.io/tbxmanager/tbxmanager.m');
 tbxmanager
 savepath
 ```
