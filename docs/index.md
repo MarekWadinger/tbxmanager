@@ -59,6 +59,33 @@ savepath
 
 </div>
 
+## Why tbxmanager?
+
+<!-- markdownlint-disable MD046 -->
+=== "Without tbxmanager"
+
+    ```matlab
+    % 1. Find the toolbox website, download the zip
+    % 2. Extract to some folder
+    % 3. Add to path (and hope you got the right subfolder)
+    addpath(genpath('/Users/me/Downloads/mpt-3.2.1'))
+    % 4. Repeat for every dependency...
+    addpath(genpath('/Users/me/Downloads/sedumi-1.3'))
+    addpath(genpath('/Users/me/Downloads/yalmip'))
+    % 5. Hope the versions are compatible
+    % 6. Tell your collaborator to do the same (good luck)
+    ```
+
+=== "With tbxmanager"
+
+    ```matlab
+    tbxmanager install mpt
+    % Done. Dependencies resolved, verified, and on your path.
+    ```
+<!-- markdownlint-enable MD046 -->
+
+tbxmanager is to MATLAB what [pip](https://pip.pypa.io) is to Python or npm is to JavaScript — a package manager that handles downloads, dependencies, and versioning so you don't have to.
+
 ## Quick Start
 
 ```matlab
