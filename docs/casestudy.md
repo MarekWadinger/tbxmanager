@@ -154,7 +154,7 @@ On first use, tbxmanager prompts for a GitHub token with `public_repo` scope and
 
     **Submit to the Registry:**
 
-    1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues/new/choose)
+    1. Go to [tbxmanager-registry > Issues > New Issue](https://github.com/MarekWadinger/tbxmanager-registry/issues)
     1. Click **"Submit Package"**
     1. Fill in:
         - **Repository URL:** `https://github.com/MarekWadinger/RLS_identification`
