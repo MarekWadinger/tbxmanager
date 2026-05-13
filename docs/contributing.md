@@ -12,6 +12,9 @@ When a PR is merged:
 
 ## Submitting a New Package
 
+!!! tip
+    The easiest way to submit a package is `tbxmanager publish` — see [Quick Start for Authors](quick-start-authors.md). The manual process below is for contributors who want to understand the registry internals or submit on behalf of others.
+
 1. **Fork** the [tbxmanager-registry](https://github.com/MarekWadinger/tbxmanager-registry) repo
 2. **Create** `packages/your-package/package.json` with the required format
 3. **Open a PR** — CI validates your submission automatically
@@ -67,3 +70,9 @@ results = runtests;
 - `tbx_` prefix for internal helpers, `main_` prefix for commands
 - MATLAB R2022a+ features only
 - Tests using `matlab.unittest.TestCase`
+
+## Next Steps
+
+- [Quick Start for Authors](quick-start-authors.md) -- publish your first package
+- [Creating Packages](creating-packages.md) -- full metadata reference
+- [Troubleshooting](troubleshooting.md) -- common issues and solutions

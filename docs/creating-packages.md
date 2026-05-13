@@ -173,7 +173,7 @@ The registry requires SHA256 hashes for integrity verification:
     ```
 
 !!! tip
-    Use the converter script to generate the registry format from your `tbxmanager.json`:
+    If you've cloned the [tbxmanager repo](https://github.com/MarekWadinger/tbxmanager) for development, you can use the converter script to generate the registry format:
     ```bash
     python scripts/convert_to_registry.py \
       --input tbxmanager.json \
@@ -181,6 +181,7 @@ The registry requires SHA256 hashes for integrity verification:
       --sha256 all=abc123... \
       --released 2026-03-28
     ```
+    This script lives in the tbxmanager repo, not in your package repo.
 
 ### Submitting to the Registry
 
@@ -217,3 +218,11 @@ The registry requires SHA256 hashes for integrity verification:
 ### Updating (Manual)
 
 To add a new version, edit your `package.json` in the registry with a new version entry and open a PR.
+
+---
+
+## Next Steps
+
+- [Quick Start for Authors](quick-start-authors.md) -- the fastest path to publishing
+- [Case Study](casestudy.md) -- real-world example with RLS_identification
+- [Contributing](contributing.md) -- how to contribute to the registry or client
