@@ -870,6 +870,19 @@ end
 %  Dependency resolver and topological sort
 %  ========================================================================
 
+function safe = tbx_safePkgFieldName(pkgName)
+%TBX_SAFEPKGFIELDNAME  Convert a package name to a MATLAB struct field name.
+%   jsondecode rewrites JSON keys that aren't valid MATLAB identifiers
+%   (e.g. "rls-identification" → "rls_identification"). User-supplied
+%   package names keep their original spelling, so any isfield or dynamic
+%   field lookup against a decoded JSON struct must pass through this
+%   helper first.
+    arguments
+        pkgName (1,1) string
+    end
+    safe = char(matlab.lang.makeValidName(char(pkgName)));
+end
+
 function plan = tbx_resolve(requested, index)
 %TBX_RESOLVE  Greedy dependency resolver with latest-version-first.
 %   requested: struct array with fields name (string), constraint (string)
@@ -909,11 +922,12 @@ function plan = tbx_resolve(requested, index)
 
 
         % Find package in index
-        if ~isfield(index.packages, char(pkgName))
+        safeName = tbx_safePkgFieldName(pkgName);
+        if ~isfield(index.packages, safeName)
             error("TBXMANAGER:PackageNotFound", ...
                 "Package '%s' not found in any index.", pkgName);
         end
-        pkgInfo = index.packages.(char(pkgName));
+        pkgInfo = index.packages.(safeName);
 
         % Get all versions sorted descending
         if ~isfield(pkgInfo, "versions")
@@ -1406,8 +1420,9 @@ function main_install(args)
     % Warn about deprecated or yanked packages
     for i = 1:numel(plan)
         pName = char(plan(i).name);
-        if isfield(index.packages, pName)
-            pkgInfo = index.packages.(pName);
+        pField = tbx_safePkgFieldName(pName);
+        if isfield(index.packages, pField)
+            pkgInfo = index.packages.(pField);
             if isfield(pkgInfo, "deprecated") && ~isempty(pkgInfo.deprecated)
                 tbx_printWarning("Package '%s' is deprecated: %s", pName, string(pkgInfo.deprecated));
             end
@@ -1836,11 +1851,12 @@ function main_update(args)
             tbx_printWarning("Package '%s' is not installed.", pkgName);
             continue;
         end
-        if ~isfield(index.packages, char(pkgName))
+        safeName = tbx_safePkgFieldName(pkgName);
+        if ~isfield(index.packages, safeName)
             tbx_printWarning("Package '%s' not found in index.", pkgName);
             continue;
         end
-        pkgInfo = index.packages.(char(pkgName));
+        pkgInfo = index.packages.(safeName);
         latestVer = "";
         if isfield(pkgInfo, "latest")
             latestVer = string(pkgInfo.latest);
@@ -2038,12 +2054,13 @@ function main_info(args)
     pkgName = args(1);
 
     index = tbx_loadIndex();
-    if ~isfield(index.packages, char(pkgName))
+    safeName = tbx_safePkgFieldName(pkgName);
+    if ~isfield(index.packages, safeName)
         tbx_printError("Package '%s' not found in any index.", pkgName);
         return;
     end
 
-    pkg = index.packages.(char(pkgName));
+    pkg = index.packages.(safeName);
 
     tbx_printf("Package: %s\n", pkgName);
     if isfield(pkg, "deprecated") && ~isempty(pkg.deprecated)
