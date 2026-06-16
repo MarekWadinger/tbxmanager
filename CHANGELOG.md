@@ -1,3 +1,9 @@
+## v2.6.0 (2026-06-16)
+
+### Feat
+
+- **client**: gate index loading on index_version compatibility (#16)
+
 ## v2.5.0 (2026-05-13)
 
 ### Feat
