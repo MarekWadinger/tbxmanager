@@ -93,6 +93,61 @@ classdef TestSourceManagement < matlab.unittest.TestCase
             testCase.verifyTrue(true, 'Broken source should be handled by catch in loadIndex');
         end
 
+        function testSupportedIndexVersionIsOne(testCase)
+            evalc('tbxmanager("help")');
+            v = tbxmanager("internal__", "supportedIndexVersion");
+            testCase.verifyEqual(double(v), 1, ...
+                'Client should report supported index_version 1');
+        end
+
+        function testIndexVersionTooNewSkipped(testCase)
+            % An index whose index_version exceeds what the client supports
+            % must be skipped (not merged) with a warning, not silently used.
+            evalc('tbxmanager("help")');
+            supported = double(tbxmanager("internal__", "supportedIndexVersion"));
+            idxFile = fullfile(testCase.TempDir, "future_index.json");
+            idx = struct();
+            idx.index_version = supported + 1;
+            idx.packages = struct("futurepkg", struct("latest", "1.0.0"));
+            fid = fopen(idxFile, 'w');
+            fprintf(fid, '%s', jsonencode(idx));
+            fclose(fid);
+            url = "file://" + replace(string(idxFile), "\", "/");
+            s.sources = {char(url)};
+            fid = fopen(fullfile(testCase.TempDir, "state", "sources.json"), 'w');
+            fprintf(fid, '%s', jsonencode(s));
+            fclose(fid);
+
+            out = evalc('result = tbxmanager("internal__", "loadIndex");');
+            result = tbxmanager("internal__", "loadIndex");
+            testCase.verifyFalse(isfield(result.packages, "futurepkg"), ...
+                'Packages from a too-new index must not be merged');
+            testCase.verifyTrue(contains(out, "selfupdate") || contains(out, "format version"), ...
+                'Should warn that the client is too old for the index');
+        end
+
+        function testIndexVersionCurrentLoads(testCase)
+            % An index at the supported version loads normally.
+            evalc('tbxmanager("help")');
+            supported = double(tbxmanager("internal__", "supportedIndexVersion"));
+            idxFile = fullfile(testCase.TempDir, "current_index.json");
+            idx = struct();
+            idx.index_version = supported;
+            idx.packages = struct("okpkg", struct("latest", "1.0.0"));
+            fid = fopen(idxFile, 'w');
+            fprintf(fid, '%s', jsonencode(idx));
+            fclose(fid);
+            url = "file://" + replace(string(idxFile), "\", "/");
+            s.sources = {char(url)};
+            fid = fopen(fullfile(testCase.TempDir, "state", "sources.json"), 'w');
+            fprintf(fid, '%s', jsonencode(s));
+            fclose(fid);
+
+            result = tbxmanager("internal__", "loadIndex");
+            testCase.verifyTrue(isfield(result.packages, "okpkg"), ...
+                'Packages from a current-version index should be merged');
+        end
+
         function testGetSourcesScalarString(testCase)
             % Write sources.json where "sources" is a bare JSON string (not array).
             % jsondecode returns it as a char vector → ischar branch in tbx_getSources.

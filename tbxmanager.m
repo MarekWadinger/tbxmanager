@@ -745,16 +745,38 @@ function tbx_writeSources(sources)
     tbx_writeJson(sourcesFile, s);
 end
 
+function v = tbx_supportedIndexVersion()
+%TBX_SUPPORTEDINDEXVERSION  Highest index.json format version this client
+%   understands. Bump only when the client gains support for a new,
+%   breaking index format (mirrors "index_version" set by build_index.py).
+    v = 1;
+end
+
 function index = tbx_loadIndex()
 %TBX_LOADINDEX  Fetch and merge package indices from all sources.
     sources = tbx_getSources();
     index = struct();
     index.packages = struct();
+    supported = tbx_supportedIndexVersion();
     for i = 1:numel(sources)
         url = sources(i);
         try
             tbx_printf("Fetching index from %s ...\n", url);
             data = tbx_fetchJson(url);
+            % Index format gate: refuse an index newer than this client
+            % understands rather than silently mis-parsing it. A missing
+            % "index_version" is treated as version 1 for backwards compat.
+            idxVer = 1;
+            if isfield(data, "index_version") && isnumeric(data.index_version)
+                idxVer = double(data.index_version);
+            end
+            if idxVer > supported
+                tbx_printWarning(...
+                    "Index at %s uses format version %d, but this client " + ...
+                    "supports up to %d. Run 'tbxmanager selfupdate' to " + ...
+                    "upgrade. Skipping this source.", url, idxVer, supported);
+                continue;
+            end
             if isfield(data, "packages")
                 pkgNames = fieldnames(data.packages);
                 for j = 1:numel(pkgNames)
@@ -3235,6 +3257,8 @@ function result = main_internal(args)
             result = tbx_platformArch();
         case "loadIndex"
             result = tbx_loadIndex();
+        case "supportedIndexVersion"
+            result = tbx_supportedIndexVersion();
         case "resolve"
             index = tbx_loadIndex();
             requested = struct("name", {}, "constraint", {});
