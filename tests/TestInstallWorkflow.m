@@ -180,6 +180,16 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             fprintf(fid, 'function mcov(); end\n');
             fclose(fid);
             zip(fullfile(testCase.MockPkgDir, "testpkg_multicov-1.0.0-all.zip"), '*', d15);
+
+            % Create test-pkg-hyphen v1.0.0 — exercises the jsondecode field-name
+            % mangling fix (hyphens in JSON keys become underscores in the decoded
+            % struct, so lookups must pass through matlab.lang.makeValidName).
+            d16 = fullfile(testCase.MockPkgDir, "test-pkg-hyphen_v1");
+            mkdir(d16);
+            fid = fopen(fullfile(d16, "hyphen_func.m"), 'w');
+            fprintf(fid, 'function hyphen_func(); end\n');
+            fclose(fid);
+            zip(fullfile(testCase.MockPkgDir, "test-pkg-hyphen-1.0.0-all.zip"), '*', d16);
         end
 
         function hash = computeSha256(~, filepath)
@@ -221,6 +231,7 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             hUpg1 = testCase.computeSha256(fullfile(d, "testpkg_upgradable-1.0.0-all.zip"));
             hUpg2 = testCase.computeSha256(fullfile(d, "testpkg_upgradable-2.0.0-all.zip"));
             hMcov = testCase.computeSha256(fullfile(d, "testpkg_multicov-1.0.0-all.zip"));
+            hHyphen = testCase.computeSha256(fullfile(d, "test-pkg-hyphen-1.0.0-all.zip"));
 
             % Build URLs
             u1v1 = char("file://" + replace(string(fullfile(d, "testpkg1-1.0.0-all.zip")), "\", "/"));
@@ -237,6 +248,7 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             uUpg1 = char("file://" + replace(string(fullfile(d, "testpkg_upgradable-1.0.0-all.zip")), "\", "/"));
             uUpg2 = char("file://" + replace(string(fullfile(d, "testpkg_upgradable-2.0.0-all.zip")), "\", "/"));
             uMcov = char("file://" + replace(string(fullfile(d, "testpkg_multicov-1.0.0-all.zip")), "\", "/"));
+            uHyphen = char("file://" + replace(string(fullfile(d, "test-pkg-hyphen-1.0.0-all.zip")), "\", "/"));
 
             % Build deterministic raw JSON (version keys like "1.0.0" are invalid struct fields).
             fmt = @(s) strrep(testCase.jsonEscape(s), '%', '%%');
@@ -298,7 +310,9 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
                         '"testpkg_conf1":{"name":"testpkg_conf1","description":"Conflict pkg 1","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
                         '"versions":{"1.0.0":{"matlab":">=R2022a","dependencies":{"testpkg1":"==2.0.0"},"platforms":{"all":{"url":"fake://conf1","sha256":"abc123"}},"released":"2026-01-01"}}},' ...
                         '"testpkg_conf2":{"name":"testpkg_conf2","description":"Conflict pkg 2","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
-                        '"versions":{"1.0.0":{"matlab":">=R2022a","dependencies":{"testpkg1":"==1.0.0"},"platforms":{"all":{"url":"fake://conf2","sha256":"abc123"}},"released":"2026-01-01"}}}' ...
+                        '"versions":{"1.0.0":{"matlab":">=R2022a","dependencies":{"testpkg1":"==1.0.0"},"platforms":{"all":{"url":"fake://conf2","sha256":"abc123"}},"released":"2026-01-01"}}},' ...
+                        '"test-pkg-hyphen":{"name":"test-pkg-hyphen","description":"Hyphenated name","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
+                        '"versions":{"1.0.0":' vfmt(uHyphen, hHyphen, '2026-01-01') '}}' ...
                     '}' ...
                 '}'];
 
@@ -345,6 +359,16 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             evalc('tbxmanager("install", "testpkg1")');
             pkgDir = fullfile(testCase.TempDir, "packages", "testpkg1");
             testCase.verifyTrue(isfolder(pkgDir), 'Package directory should exist');
+        end
+
+        function testInstallHyphenatedPackage(testCase)
+            % Regression test: jsondecode rewrites hyphenated JSON keys to
+            % underscored struct fields, so resolve/lookup must normalise
+            % the user-supplied name via matlab.lang.makeValidName.
+            evalc('tbxmanager("install", "test-pkg-hyphen")');
+            pkgDir = fullfile(testCase.TempDir, "packages", "test-pkg-hyphen");
+            testCase.verifyTrue(isfolder(pkgDir), ...
+                'Hyphenated package directory should exist after install');
         end
 
         function testInstallTarGzPackage(testCase)
