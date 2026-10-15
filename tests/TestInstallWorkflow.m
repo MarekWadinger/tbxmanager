@@ -190,6 +190,12 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             fprintf(fid, 'function hyphen_func(); end\n');
             fclose(fid);
             zip(fullfile(testCase.MockPkgDir, "test-pkg-hyphen-1.0.0-all.zip"), '*', d16);
+
+            % Create testpkg_single v1.0.0 — a bare .m file whose name differs
+            % from the package name (like qpspline → QPspline.m).
+            fid = fopen(fullfile(testCase.MockPkgDir, "QPspline_single.m"), 'w');
+            fprintf(fid, 'function QPspline_single(); end\n');
+            fclose(fid);
         end
 
         function hash = computeSha256(~, filepath)
@@ -232,6 +238,7 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             hUpg2 = testCase.computeSha256(fullfile(d, "testpkg_upgradable-2.0.0-all.zip"));
             hMcov = testCase.computeSha256(fullfile(d, "testpkg_multicov-1.0.0-all.zip"));
             hHyphen = testCase.computeSha256(fullfile(d, "test-pkg-hyphen-1.0.0-all.zip"));
+            hSingle = testCase.computeSha256(fullfile(d, "QPspline_single.m"));
 
             % Build URLs
             u1v1 = char("file://" + replace(string(fullfile(d, "testpkg1-1.0.0-all.zip")), "\", "/"));
@@ -249,6 +256,7 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             uUpg2 = char("file://" + replace(string(fullfile(d, "testpkg_upgradable-2.0.0-all.zip")), "\", "/"));
             uMcov = char("file://" + replace(string(fullfile(d, "testpkg_multicov-1.0.0-all.zip")), "\", "/"));
             uHyphen = char("file://" + replace(string(fullfile(d, "test-pkg-hyphen-1.0.0-all.zip")), "\", "/"));
+            uSingle = char("file://" + replace(string(fullfile(d, "QPspline_single.m")), "\", "/"));
 
             % Build deterministic raw JSON (version keys like "1.0.0" are invalid struct fields).
             fmt = @(s) strrep(testCase.jsonEscape(s), '%', '%%');
@@ -312,7 +320,9 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
                         '"testpkg_conf2":{"name":"testpkg_conf2","description":"Conflict pkg 2","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
                         '"versions":{"1.0.0":{"matlab":">=R2022a","dependencies":{"testpkg1":"==1.0.0"},"platforms":{"all":{"url":"fake://conf2","sha256":"abc123"}},"released":"2026-01-01"}}},' ...
                         '"test-pkg-hyphen":{"name":"test-pkg-hyphen","description":"Hyphenated name","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
-                        '"versions":{"1.0.0":' vfmt(uHyphen, hHyphen, '2026-01-01') '}}' ...
+                        '"versions":{"1.0.0":' vfmt(uHyphen, hHyphen, '2026-01-01') '}},' ...
+                        '"testpkg_single":{"name":"testpkg_single","description":"Single .m file","license":"MIT","authors":["Test"],"latest":"1.0.0",' ...
+                        '"versions":{"1.0.0":' vfmt(uSingle, hSingle, '2026-01-01') '}}' ...
                     '}' ...
                 '}'];
 
@@ -515,6 +525,17 @@ classdef TestInstallWorkflow < matlab.unittest.TestCase
             evalc('tbxmanager("install", "testpkg_tgz")');
             testCase.verifyTrue(isfolder(fullfile(testCase.TempDir, "packages", "testpkg_tgz")), ...
                 '.tgz package should be installed');
+        end
+
+        function testInstallSingleFileKeepsOriginalName(testCase)
+            % A bare .m package must keep its URL filename, otherwise MATLAB
+            % cannot call the function it defines.
+            evalc('tbxmanager("install", "testpkg_single")');
+            pkgDir = fullfile(testCase.TempDir, "packages", "testpkg_single", "1.0.0");
+            testCase.verifyTrue(isfile(fullfile(pkgDir, "QPspline_single.m")), ...
+                'Single-file package should keep its original filename');
+            testCase.verifyEqual(exist("QPspline_single", "file"), 2, ...
+                'Function from single-file package should be callable');
         end
 
         function testInstallNoExtension(testCase)
