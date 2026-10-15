@@ -53,11 +53,11 @@ Versions must be semver: `MAJOR.MINOR` or `MAJOR.MINOR.PATCH`.
 Failed to download http://people.ee.ethz.ch/~mpt/tbx/pool/...: The server returned the status 404 ...
 ```
 
-ETH Zurich removed the file pool that hosted MPT3 and its solvers (SeDuMi, LCP, CDD, GLPK, CLP, HYSDEL, ESPRESSO, …). Your MATLAB or setup isn't at fault, and reinstalling tbxmanager won't help. The registry is restoring the files and now keeps its own copy of every archive.
+ETH Zurich removed the file pool that hosted MPT3 and its solvers (SeDuMi, LCP, CDD, GLPK, CLP, HYSDEL, ESPRESSO, …). All packages were restored on 15 October 2026, and the registry now keeps its own copy of every archive.
 
-- If MPT3 is already installed, it keeps working. Don't uninstall it until the issue is resolved.
-- Run `tbxmanager update` once packages are restored; the new download locations come with the updated index.
-- Status, affected platforms and updates: [tbxmanager#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
+- Run `tbxmanager update`. The updated index points to the restored files.
+- If you still see this error, you're probably on the legacy client from tbxmanager.com. Switch to the new client (see [Getting Started](getting-started.md)).
+- A few very old versions are lost for good and are yanked, so the resolver skips them. Details: [tbxmanager#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
 
 ### "Package not found in any index"
 
