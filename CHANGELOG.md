@@ -1,3 +1,9 @@
+## v2.6.1 (2026-10-15)
+
+### Fix
+
+- **client**: keep original filename for single-file packages; docs: ETH outage notice (#20)
+
 ## v2.6.0 (2026-06-16)
 
 ### Feat
