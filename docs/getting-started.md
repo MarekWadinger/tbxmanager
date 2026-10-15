@@ -1,7 +1,7 @@
 # Getting Started
 
-!!! warning "MPT3 installs failing with a 404 error?"
-    ETH Zurich removed the server that hosted MPT3 and its solvers. Files are being restored now. Status and updates: [tbxmanager#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
+!!! note "Seeing a 404 error when installing MPT3?"
+    ETH Zurich removed the server that hosted MPT3 and its solvers. All packages were restored on 15 October 2026, so run `tbxmanager update`. Details: [tbxmanager#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
 
 ## Prerequisites
 
