@@ -8,6 +8,9 @@
   <em>A modern package manager for MATLAB.</em>
 </p>
 
+> [!WARNING]
+> **MPT3 installs failing with a 404 error?** ETH Zurich removed the server that hosted MPT3 and its solvers. Files are being restored now. Status and updates: [#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
+
 <p align="center">
   <a href="https://github.com/MarekWadinger/tbxmanager/actions/workflows/test.yml"><img src="https://github.com/MarekWadinger/tbxmanager/actions/workflows/test.yml/badge.svg" alt="Test"></a>
   <a href="https://codecov.io/gh/MarekWadinger/tbxmanager"><img src="https://codecov.io/gh/MarekWadinger/tbxmanager/graph/badge.svg?token=TmB6OzWFfo" alt="codecov"></a>
