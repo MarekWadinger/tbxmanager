@@ -1557,11 +1557,13 @@ function tbx_installSinglePackage(pkg, cacheDir)
     end
     % Single-file packages (.m, .p) — copy directly, no extraction needed
     cacheStr = string(cacheFile);
-    [~, cacheBase, cacheExt] = fileparts(char(cacheStr));
+    [~, ~, cacheExt] = fileparts(char(cacheStr));
     isSingleFile = any(cacheExt == [".m", ".p"]);
     if isSingleFile
         tbx_printf("  Copying single-file package...\n");
-        copyfile(char(cacheFile), fullfile(char(destDir), [cacheBase, cacheExt]));
+        % Keep the URL filename: MATLAB resolves functions by file name
+        [~, urlBase] = fileparts(char(urlStr));
+        copyfile(char(cacheFile), fullfile(char(destDir), [urlBase, cacheExt]));
     else
         tbx_printf("  Extracting...\n");
         tmpDir = fullfile(tbx_baseDir(), "tmp", pkg.name + "-" + pkg.version);
