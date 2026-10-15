@@ -1,5 +1,8 @@
 # Getting Started
 
+!!! warning "MPT3 installs failing with a 404 error?"
+    ETH Zurich removed the server that hosted MPT3 and its solvers. Files are being restored now. Status and updates: [tbxmanager#18](https://github.com/MarekWadinger/tbxmanager/issues/18).
+
 ## Prerequisites
 
 - **MATLAB R2022a** or newer
